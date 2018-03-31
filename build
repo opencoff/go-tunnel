@@ -1,0 +1,342 @@
+#! /usr/bin/env bash
+
+# Tool to build go programs in this repo
+#
+# - it tacks on a version number for use by the individual tools
+# - it supports git and mercurial version#
+# 
+# NB:
+#   o the attempt at decoding dirty repo state for mercurial is
+#     borked. It doesn't know about untracked files
+#
+# (c) 2016 Sudhi Herle
+#
+# License: GPLv2
+#
+Progs=""
+
+# Relative path to protobuf sources
+# e.g. src/foo/a.proto
+Protobufs=""
+
+
+# -- DO NOT CHANGE ANYTHING AFTER THIS --
+
+Z=`basename $0`
+PWD=`pwd`
+
+Static=0
+Dryrun=0
+Prodver=0.1
+
+hostos=$(go env GOHOSTOS)       || exit 1
+hostcpu=$(go env GOHOSTARCH)    || exit 1
+
+die() {
+    echo "$Z: $@" 1>&2
+    exit 0
+}
+
+warn() {
+    echo "$Z: $@" 1>&2
+}
+
+case $BASH_VERSION in
+    4.*.*) ;;
+
+    *) die "I need bash 4.x to run!"
+        ;;
+esac
+
+
+# build a tool that runs on the host - if needed.
+hosttool() {
+    local tool=$1
+    local bindir=$2
+    local src=$3
+
+    local p=$(type -P $tool)
+    if [ -n "$p" ]; then
+        echo $p
+        return 0
+    fi
+
+    # from here - we want this dir to find all build artifacts
+    PATH=$PATH:$bindir
+    export PATH
+
+    p=$bindir/$tool
+    if [ -x $p ]; then
+        echo $p
+        return 0
+    fi
+
+    # build it and stash it in the hostdir
+    echo "Building tool $tool from $src .."
+    $e go get -d      $src || exit 1
+    $e go build -o $p $src || exit 1
+    echo $p
+    return 0
+}
+
+
+usage() {
+
+    cat <<EOF
+$0 - A Go production build tool that adds git-repository information,
+product version, build-timestamp etc. It supports cross-compilation,
+static linking and generating protobuf output.
+
+If needed, it uses the gogo-slick protobuf compiler [github.com/gogo/protobuf].
+
+Build output is in bin/\$OS-\$CPU for a given OS, CPU combination.
+
+Usage: $0
+       $0 [options] [PROGS]
+
+Where OS-ARCH denotes one of the valid OS, ARCH combinations supported by 'go'.
+And, PROGS is one or more go programs.
+
+With no arguments, $0 builds: $Progs (source in ./src/)
+
+Options:
+    -h, --help          Show this help message and quit
+    -s, --static        Build a statically linked binary [False]
+    -V N, --version=N   Use 'N' as the product version string [$Prodver]
+    -a X, --arch=X      Cross compile for OS-CPU 'X' [$hostos-$hostcpu]
+    -n, --dry-run       Dry-run, don't actually build anything [False]
+    -t, --test          Run "go test" on modules named on the command line [False]
+    -x                  Run in debug/trace mode [False]
+EOF
+
+    exit 0
+}
+
+host=`uname|tr '[A-Z]' '[a-z]'`
+export GO15VENDOREXPERIMENT=1
+
+declare -A oses
+declare -A cpus
+declare -A cgo
+
+# Supported & Verified OS/CPU combos for this script
+oslist="linux android openbsd freebsd darwin dragonfly netbsd windows"
+needcgo="android"
+cpulist="i386 amd64 arm arm64"
+cpualias_i386="i486 i586 i686"
+cpualias_amd64="x86_64"
+cpualias_arm64="aarch64"
+
+# CGO Cross-Compilers for various CPU+OS combinations of Android
+android_i386=i686-linux-android-gcc
+android_arm64=aarch64-linux-android-gcc
+android_arm=arm-linux-androideabi-gcc
+
+# initialize the various hash tables
+for o in $oslist;  do oses[$o]=$o; done
+for o in $needcgo; do cgo[$o]=$o;  done
+for c in $cpulist; do
+    cpus[$c]=$c
+    a="cpualias_$c"
+    a=${!a}
+    for x in $a; do cpus[$x]=$c; done
+done
+
+
+Runtests=0
+doinit=0
+args=
+
+#set -x
+ac_prev=
+for ac_option
+do
+  shift
+
+  if [ -n "$ac_prev" ]; then
+    eval "$ac_prev=\$ac_option"
+    ac_prev=
+    continue
+  fi
+
+  case "$ac_option" in
+      -*=*) ac_optarg=`echo "$ac_option" | sed 's/[-_a-zA-Z0-9]*=//'` ;;
+      *) ac_optarg= ;;
+  esac
+
+
+  case "$ac_option" in
+        --help|-h|--hel|--he|--h)
+            usage;
+            ;;
+
+        --arch=*)
+            Arch=$ac_optarg
+            ;;
+        -a|--arch)
+            ac_prev=Arch
+            ;;
+
+        --version=*)
+            Prodver=$ac_optarg
+            ;;
+        --test|-t)
+            Runtests=1
+            ;;
+
+        -V|--version)
+            ac_prev=Prodver
+            ;;
+
+        -s|--static)
+            Static=1
+            ;;
+
+        --dry-run|-n)
+            Dryrun=1
+            ;;
+
+        --debug|-x)
+            set -x
+            ;;
+
+        *) # first non option terminates option processing.
+           # we gather all remaining args and bundle them up.
+            args="$args $ac_option"
+            for xx
+            do
+                args="$args $xx"
+            done
+            break
+            ;;
+  esac
+done
+[ $Dryrun  -gt 0 ] && e=echo
+
+# let every error abort
+set -e
+
+# This fragment can't be in a function - since it exports several vars
+if [ -n "$Arch" ]; then
+    ox=${Arch%%-*}
+    cx=${Arch##*-}
+    [ "$ox" = "$cx" ] && cx=$hostcpu
+
+    os=${oses[$ox]}
+    cpu=${cpus[$cx]}
+    [ -z "$os" ]  && die "Don't know anything about OS $ox"
+    [ -z "$cpu" ] && die "Don't know anything about CPU $cx"
+
+    export GOOS=$os GOARCH=$cpu
+    cross=$os-$cpu
+
+else
+    os=$hostos
+    cpu=$hostcpu
+    cross=$os-$cpu
+fi
+
+# If we don't need CGO, then we can attempt a static link
+if [ -n "${cgo[$os]}" ]; then
+    export CGO_ENABLED=1
+
+    # See if we have a specific cross-compiler for this CPU+OS combo
+    xcc="${GOOS}_${GOARCH}"
+    xcc=${!xcc}
+    if [ -n "$xcc" ]; then
+        p=`type -p $xcc`
+        [ -n "$p" ] || die "Can't find $xcc! Do you have compilers for $GOARCH available in PATH?"
+        export CC=$xcc
+    else
+        echo "$Z: No Cross compiler defined for $GOOS-$GOARCH. Build may fail.." 1>&2
+    fi
+else
+    if [ $Static -gt 0 ]; then
+        export CGO_ENABLED=0
+
+        isuffix="--installsuffix cgo"
+        ldflags="-s"
+        msg="statically linked"
+    fi
+fi
+
+# Sane GOPATH
+export GOPATH=$PWD/vendor:$PWD
+
+# This is where build outputs go
+Bindir=$PWD/bin/$cross
+Hostbindir=$PWD/bin/$hostos-$hostcpu
+
+[ -d $Bindir ]     || mkdir -p $Bindir
+[ -d $Hostbindir ] || mkdir -p $Hostbindir
+
+# Get git/hg version info for the build
+if [ -d "./.hg" ]; then
+    xrev=$(hg id --id) || exit 1
+    brev=${xrev%+}
+    if [ "$brev" != "$xrev" ]; then
+        rev="hg:${brev}-dirty"
+    else
+        rev="hg:${brev}"
+    fi
+elif [ -d "./.git" ]; then
+    xrev=$(git describe --always --dirty --long --abbrev=12) || exit 1
+    rev="git:$xrev"
+else
+    rev="UNKNOWN-VER"
+    echo "$0: Can't find version info" 1>&2
+fi
+
+# Do Protobufs if needed
+if [ -n "$Protobufs" ]; then
+    slick=$Hostbindir/protoc-gen-gogoslick
+    slicksrc=github.com/gogo/protobuf/protoc-gen-gogoslick
+    pc=$(type -p protoc)
+
+    [ -z "$pc" ] && die "Need 'protoc' for building .."
+
+    slick=$(hosttool protoc-gen-gogoslick $Hostbindir $slicksrc) || exit 1
+    #if [ ! -f $slick ]; then
+    #   echo "Building $slick .."
+    #   $e go build -o $slick github.com/gogo/protobuf/protoc-gen-gogoslick || exit 1
+    #i
+
+    export PATH=$PATH:$Hostbindir
+
+    for f in $Protobufs; do
+        dn=$(dirname $f)
+        bn=$(basename $f .proto)
+        of=$dn/${bn}.pb.go
+        if [ $f -nt $of ]; then
+            echo "Running $pc .."
+            $e $pc --gogoslick_out=. $f || exit 1
+        fi
+    done
+fi
+
+repover="main.RepoVersion=$rev"
+prodver="main.ProductVersion=$Prodver"
+date="main.Buildtime=`date -u '+%Y-%m-%dT%H:%M.%SZ'`"
+ldflags="-ldflags \"-X $repover -X $prodver -X $date $ldflags\""
+
+
+if [ $Runtests -gt 0 ]; then
+    set -- $args
+    $e go test "$@"
+else
+    set -- $args
+    if [ -z "$1" ]; then
+        all=$Progs
+    else
+        all="$@"
+    fi
+
+    echo "Building $rev, $cross $msg .."
+
+    for p in $all; do 
+        echo "   $p .."
+        $e eval go build -o $Bindir/$p $isuffix "$ldflags" $p || exit 1
+    done
+fi
+
+# vim: ft=sh:expandtab:ts=4:sw=4:tw=84:
