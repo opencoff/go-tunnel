@@ -8,6 +8,7 @@
 
 package main
 
+/*
 import (
 	//"io"
 	//"fmt"
@@ -259,5 +260,6 @@ func (b *bufPool) Get() []byte {
 func (b *bufPool) Put(z []byte) {
 	b.p.Put(z)
 }
+*/
 
 // vim: noexpandtab:

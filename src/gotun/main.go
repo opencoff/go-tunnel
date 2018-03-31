@@ -10,8 +10,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
-	"net"
 	"os"
 	"os/signal"
 	"runtime"
@@ -22,7 +20,7 @@ import (
 
 	flag "github.com/ogier/pflag"
 
-	L "github.com/opencoff/go-lib/logger"
+	L "github.com/opencoff/go-logger"
 )
 
 // This will be filled in by "build"
@@ -117,6 +115,7 @@ func main() {
 	log.Info("gotun - %s [%s - built on %s] starting up (logging at %s)...",
 		ProductVersion, RepoVersion, Buildtime, L.PrioString[log.Prio()])
 
+	ulog = ulog
 		/*
 	var srv []Proxy
 
@@ -151,9 +150,11 @@ func main() {
 		break
 	}
 
+	/*
 	for _, s := range srv {
 		s.Stop()
 	}
+	*/
 
 	log.Info("Shutdown complete!")
 
