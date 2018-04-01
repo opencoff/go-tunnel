@@ -101,22 +101,13 @@ func main() {
 		warn("Can't enable log rotation: %s", err)
 	}
 
-	var ulog *L.Logger
-
-	if len(cfg.URLlog) > 0 {
-		ulog, err := L.NewFilelog(cfg.URLlog, L.LOG_INFO, "", 0)
-		if err != nil {
-			die("Can't create URL logger: %s", err)
-		}
-
-		ulog.EnableRotation(00, 00, 01, 01)
-	}
 
 	log.Info("gotun - %s [%s - built on %s] starting up (logging at %s)...",
 		ProductVersion, RepoVersion, Buildtime, L.PrioString[log.Prio()])
 
-	ulog = ulog
-		/*
+	cfg.Dump(log)
+
+	/*
 	var srv []Proxy
 
 	for _, v := range cfg.Http {
@@ -149,6 +140,7 @@ func main() {
 		log.Info("Caught signal %d; Terminating ..\n", int(t))
 		break
 	}
+
 
 	/*
 	for _, s := range srv {
