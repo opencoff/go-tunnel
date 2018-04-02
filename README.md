@@ -135,21 +135,27 @@ allow/deny rules. The rules are evaluated in the following order:
 
 1. Only allow specific subnets and deny everyone else:
 
+```
     allow: [ 192.168.55.0/24, 172.16.10.0/24, 127.0.0.1/8 ],
     deny: []
+```
 
 
 2. Allow all except selected subnets:
 
+```
     allow: [],
     deny: [ 192.168.80.0/24", 172.16.5.0/24 ]
+```
 
 
 3. Expliclty block certain hosts and explicitly allow certain
    subnets and block everyone else:
 
+```
     allow: [ 192.168.55.0/24, 172.16.10.0/24, 127.0.0.1/8 ],
     deny:  [ 192.168.1.1/32, 192.168.80.0/24, 172.16.5.0/24 ]
+```
 
 
 ## Development Notes
@@ -178,7 +184,9 @@ If you are a developer, the notes here will be useful for you:
 - If you are building for the first time, then you have to first prepare the 3rd
   party vendored code:
 
+```
      ./dep.sh ensure
+```
 
   This pulls in the required 3rd party libraries and checks out the pinned
   versions. The list of 3rd party dependencies are in `vendor/manifest.txt`.
@@ -190,11 +198,15 @@ If you are a developer, the notes here will be useful for you:
   meaningful only to the daemons. These are in the `src/lib/` sub-dirs. In Go,
   these are imported like so (for example):
 
+```golang
     import "lib/config"
+```
 
 - Vendor libraries from github are imported using the `dep.sh` script like so:
 
+```
     ./dep.sh get github.com/opencoff/go-ratelimit
+```
 
   And used in code using the usual syntax. The above command fetches the library
   and its dependencies and records them in `vendor/manifest.txt`.
@@ -214,7 +226,9 @@ This allows one to structure the code as follows:
 - All local libraries (by convention) go in `./src/lib`; and imported in code
   as:
 
+```golang
     import "lib/module"
+```
 
 General usage help:
 
