@@ -16,8 +16,28 @@ go-tunnel uses golang's TLS stack and built-in certification verification.
 - YAML Configuration file
 - Access Control on per IP or subnet basis (allow/deny combination)
 
-### Modes of operation
-TBD with Pictures
+### Motivating Example
+Let us suppose that you have a SOCKS5 server on host `192.168.55.3` and this
+is accessible via a "gateway" node `172.16.55.3`. Furthermore, let us say that
+clients/browsers wishing to use the SOCKS5 proxy are in the `10.0.0.0/24` subnet.
+And to keep things simple, let us assume that one host in the `10.0.0.0` network 
+can access the gateway node: `10.0.0.5`.
+
+Ordinarily, we'd create a IP routing rule on `10.0.0.5` to make the hosts on its network
+access the `192.168.55.0/24` via `172.16.55.3`. But, we desire the communication
+between `10.0.0.0/24` and `172.16.55.0/24` to be encrypted.
+
+Thus, with go-tunnel, one can setup a "bridge" between the two networks - and the bridge
+is encrypted with TLS. The picture below explains the connectivity:
+
+![example diagram](/docs/example-diagram.png)
+
+In the setup above, hosts will treat `10.0.0.5:1080` as their "real" SOCKS server. Behind the
+scenes, go-tunnel is relaying the packets from `10.0.0.5` to `172.16.55.3` via TLS. And, in turn
+`172.16.55.3` relays the decrypted packets to the actual SOCKS server on `192.168.55.3`.
+
+The config file shown above actually demonstrates a really secure tunnel - where the server and
+client both use certificates to authenticate each other.
 
 ### Building go-tunnel
 You need a reasonably new Golang toolchain (1.8+). And the `go`
