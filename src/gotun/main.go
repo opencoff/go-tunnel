@@ -24,8 +24,8 @@ import (
 )
 
 // This will be filled in by "build"
-var RepoVersion    string = "UNDEFINED"
-var Buildtime      string = "UNDEFINED"
+var RepoVersion string = "UNDEFINED"
+var Buildtime string = "UNDEFINED"
 var ProductVersion string = "UNDEFINED"
 
 // Number of minutes of profile data to capture
@@ -101,28 +101,21 @@ func main() {
 		warn("Can't enable log rotation: %s", err)
 	}
 
-
 	log.Info("gotun - %s [%s - built on %s] starting up (logging at %s)...",
 		ProductVersion, RepoVersion, Buildtime, L.PrioString[log.Prio()])
 
 	cfg.Dump(log)
 
-	/*
-	var srv []Proxy
-
-	for _, v := range cfg.Http {
-		if len(v.Listen) == 0 {
-			die("http listen address is empty?")
-		}
-		s, err := NewHTTPProxy(&v, log, ulog)
-		if err != nil {
-			die("Can't create http listener on %s: %s", v, err)
-		}
-
-		srv = append(srv, s)
-		s.Start()
+	if len(cfg.Listen) == 0 {
+		die("%s: no listeners in config file", cfgfile)
 	}
-	*/
+
+	var srv []Proxy
+	for _, ln := range cfg.Listen {
+		p := NewTCPServer(&ln, log)
+		srv = append(srv, p)
+		p.Start()
+	}
 
 	// Setup signal handlers
 	sigchan := make(chan os.Signal, 4)
@@ -141,12 +134,9 @@ func main() {
 		break
 	}
 
-
-	/*
 	for _, s := range srv {
 		s.Stop()
 	}
-	*/
 
 	log.Info("Shutdown complete!")
 

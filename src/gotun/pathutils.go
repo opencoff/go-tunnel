@@ -17,7 +17,7 @@ func readdir(dn string) (files, dirs, oth []os.FileInfo, err error) {
 	var fd *os.File
 
 	fd, err = os.Open(dn)
-	if err != nil  {
+	if err != nil {
 		return
 	}
 

@@ -9,27 +9,26 @@
 package main
 
 import (
-	"io"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
+	"io"
 	"io/ioutil"
-	"path"
 	"net"
+	"path"
 	"sync"
 	"time"
-	"errors"
 
 	L "github.com/opencoff/go-logger"
 	"github.com/opencoff/go-ratelimit"
 )
 
 // XXX These should be in a config file
-const dialerTimeout = 3       // seconds
+const dialerTimeout = 3        // seconds
 const connectionKeepAlive = 20 // seconds
 const readTimeout = 20         // seconds
 const writeTimeout = 60        // seconds; 3x read timeout. Enough time?
-
 
 type TCPServer struct {
 	*net.TCPListener
@@ -60,7 +59,7 @@ type TCPServer struct {
 	log *L.Logger
 }
 
-func NewTCPServer(lc *ListenConf, log *L.Logger) (Proxy, error) {
+func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 	addr := lc.Addr
 	la, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -109,10 +108,7 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) (Proxy, error) {
 		prl:  pl,
 	}
 
-	if lc.Connect.Tls != nil {
-	}
-
-	return p, nil
+	return p
 }
 
 // Start listener
@@ -131,15 +127,9 @@ func (p *TCPServer) Start() {
 }
 
 // Stop server
-// XXX Hijacked Websocket conns are not shutdown here
 func (p *TCPServer) Stop() {
-	close(p.stop)
-
-	_, cancel := context.WithTimeout(p.ctx, 10*time.Second)
-
 	p.cancel()
-	defer cancel()
-
+	close(p.stop)
 	p.wg.Wait()
 	p.log.Info("TCP server shutdown")
 }
@@ -183,17 +173,15 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	b0 := p.getBuf()
 	b1 := p.getBuf()
 
-	nctx, cancel := context.WithCancel(ctx)
-
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		cancellableCopy(conn, peer, nctx, b0)
+		cancellableCopy(conn, peer, ctx, b0)
 	}()
 
 	go func() {
 		defer wg.Done()
-		cancellableCopy(peer, conn, nctx, b1)
+		cancellableCopy(peer, conn, ctx, b1)
 	}()
 
 	ch := make(chan bool)
@@ -203,12 +191,10 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	}()
 
 	select {
-	case <- p.ctx.Done():
-		cancel()
-		<- ch
+	case <-ctx.Done():
+		<-ch
 
-	case <- ch:
-		cancel()
+	case <-ch:
 	}
 
 	p.putBuf(b0)
@@ -217,7 +203,6 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	conn.Close()
 	peer.Close()
 }
-
 
 func (p *TCPServer) getBuf() []byte {
 	b := p.pool.Get()
@@ -238,9 +223,10 @@ func cancellableCopy(d, s net.Conn, ctx context.Context, buf []byte) {
 
 	for {
 		select {
-		case <- ch:
+		case <-ch:
 			return
-		case <- ctx.Done():
+		case <-ctx.Done():
+			// This forces both copy go-routines to end the for{} loops.
 			d.Close()
 			s.Close()
 		}
@@ -268,8 +254,6 @@ func copyBuf(d, s net.Conn, buf []byte) {
 		}
 	}
 }
-
-
 
 // Accept() new socket connections from the listener
 func (p *TCPServer) Accept() (net.Conn, error) {
@@ -464,7 +448,7 @@ func resolveAddr(addr string) net.Addr {
 	if ip := net.ParseIP(addr); ip != nil {
 		return &net.IPAddr{IP: ip}
 	}
-	
+
 	a, err := net.LookupIP(addr)
 	if err == nil {
 		return &net.IPAddr{IP: a[0]}

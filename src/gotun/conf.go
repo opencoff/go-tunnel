@@ -9,34 +9,33 @@
 package main
 
 import (
-	"io"
 	"fmt"
-	"strings"
 	yaml "gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"net"
+	"strings"
 )
 
 // List of config entries
 type Conf struct {
-	Logging  string `yaml:"log"`
-	LogLevel string `yaml:"loglevel"`
+	Logging  string       `yaml:"log"`
+	LogLevel string       `yaml:"loglevel"`
 	Listen   []ListenConf `yaml:"listen"`
 }
 
 type ListenConf struct {
-	Addr   string   `yaml:"address"`
-	Allow  []subnet `yaml:"allow"`
-	Deny   []subnet `yaml:"deny"`
+	Addr  string   `yaml:"address"`
+	Allow []subnet `yaml:"allow"`
+	Deny  []subnet `yaml:"deny"`
 
 	// optional TLS info; will listen on TLS socket if provided
-	Tls    *TlsServerConf  `yaml:"tls"`
+	Tls *TlsServerConf `yaml:"tls"`
 
 	// rate limit -- perhost and global
 	Ratelimit *RateLimit `yaml:"ratelimit"`
 
-	Connect  ConnectConf `yaml:"connect"`
-
+	Connect ConnectConf `yaml:"connect"`
 }
 
 type RateLimit struct {
@@ -51,30 +50,29 @@ type subnet struct {
 
 // Connect info
 type ConnectConf struct {
-	Addr    string `yaml:"address"`
-	Bind    string
-	Tls     *TlsClientConf `yaml:"tls"`
+	Addr string `yaml:"address"`
+	Bind string
+	Tls  *TlsClientConf `yaml:"tls"`
 }
 
 // Tls Conf
 type TlsServerConf struct {
-	Sni     bool
-	Certdir string
-	Cert    string
-	Key     string
+	Sni        bool
+	Certdir    string
+	Cert       string
+	Key        string
 	ClientAuth string
-	ClientCA string
+	ClientCA   string
 }
 
 // Tls client conf
 type TlsClientConf struct {
-	Cert    string
-	Ca      string
-	Key     string
+	Cert string
+	Ca   string
+	Key  string
 
-	Server	string	`yaml:"servername"`
+	Server string `yaml:"servername"`
 }
-
 
 // Custom unmarshaler for IPNet
 func (ipn *subnet) UnmarshalYAML(unm func(v interface{}) error) error {
@@ -95,7 +93,6 @@ func (ipn *subnet) UnmarshalYAML(unm func(v interface{}) error) error {
 	return err
 }
 
-
 // Parse config file in YAML format and return
 func ReadYAML(fn string) (*Conf, error) {
 	yml, err := ioutil.ReadFile(fn)
@@ -114,7 +111,6 @@ func ReadYAML(fn string) (*Conf, error) {
 	}
 	return defaults(&cfg), nil
 }
-
 
 // Setup sane defaults if needed
 func defaults(c *Conf) *Conf {
@@ -202,7 +198,6 @@ func validate(c *Conf) error {
 	return nil
 }
 
-
 // Print config in human readable format
 func (c *Conf) Dump(w io.Writer) {
 	fmt.Fprintf(w, "config: %d listeners\n", len(c.Listen))
@@ -214,7 +209,7 @@ func (c *Conf) Dump(w io.Writer) {
 				fmt.Fprintf(w, " with tls sni using certstore %s", t.Certdir)
 			} else {
 				fmt.Fprintf(w, " with tls using cert %s, key %s",
-				t.Cert, t.Key)
+					t.Cert, t.Key)
 			}
 			if t.ClientAuth == "required" {
 				fmt.Fprintf(w, " requiring client auth")
