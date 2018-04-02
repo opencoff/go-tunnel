@@ -112,7 +112,7 @@ func main() {
 
 	var srv []Proxy
 	for _, ln := range cfg.Listen {
-		p := NewTCPServer(&ln, log)
+		p := NewTCPServer(ln, log)
 		srv = append(srv, p)
 		p.Start()
 	}

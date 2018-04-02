@@ -1,0 +1,99 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 20578 (0x5062)
+    Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=US, ST=TX, L=Dallas, O=Snakeoil Peddlers Inc., CN=xca.dfw.herle.net/emailAddress=certadmin@xca.dfw.herle.net
+        Validity
+            Not Before: Apr  2 01:49:49 2018 GMT
+            Not After : Apr  2 01:49:49 2019 GMT
+        Subject: C=US, ST=TX, L=Dallas, O=Snakeoil Peddlers Inc., CN=cli@dfw.herle.net/emailAddress=cli@dfw.herle.net
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:ab:e4:8c:b3:be:8c:c9:fc:08:10:98:4a:66:53:
+                    3e:0c:b4:96:18:fc:c8:75:d6:9f:dd:7d:aa:4f:8e:
+                    20:bd:ff:86:c2:0c:bb:62:09:d8:bc:ba:c6:8d:e1:
+                    1b:4e:e1:cf:12:48:f3:23:64:b9:46:4b:56:70:2b:
+                    d9:08:fb:81:7f:ee:6f:29:c3:9e:f8:57:bd:e2:0d:
+                    1c:12:77:e0:8c:a3:c9:44:67:a3:a4:d7:fa:b4:ee:
+                    e9:f4:2a:44:df:b8:15:33:f9:4f:5e:6d:81:07:23:
+                    8d:7c:35:3b:63:0e:03:f1:b5:b8:ee:31:ef:02:8a:
+                    d8:3c:6f:20:cc:0f:a0:76:8a:80:5d:76:70:99:fa:
+                    4b:fd:97:a0:d6:dc:04:a3:2b:e6:93:4d:da:3e:23:
+                    69:96:73:1f:5f:04:d6:8c:d5:4b:21:4b:e9:f3:21:
+                    c5:fc:48:eb:ea:93:1a:78:e3:da:2a:04:ff:98:9f:
+                    61:1d:93:da:20:0a:79:3e:2e:30:c9:58:b4:b9:75:
+                    a3:34:f4:47:31:18:80:6d:66:1d:a7:96:70:99:b7:
+                    c8:22:a5:33:15:54:d4:91:84:f3:2e:74:b1:31:a9:
+                    1e:38:c6:36:57:10:2c:6c:be:d8:28:f8:c2:f0:31:
+                    c4:71:b9:b8:6d:ea:67:cc:01:01:f6:12:6d:dc:89:
+                    0a:31
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            Netscape Cert Type: 
+                SSL Client, S/MIME
+            X509v3 Extended Key Usage: 
+                TLS Web Client Authentication
+            X509v3 Key Usage: 
+                Digital Signature, Non Repudiation, Key Encipherment, Data Encipherment, Key Agreement
+            X509v3 Basic Constraints: 
+                CA:FALSE
+            Netscape Comment: 
+                Certificate issued by Snakeoil CA
+            X509v3 Subject Key Identifier: 
+                6B:7D:30:ED:0E:0B:17:BD:9A:AD:48:C5:38:2D:9E:90:A7:56:83:CC
+            X509v3 Authority Key Identifier: 
+                keyid:C5:5B:62:C8:16:61:B1:F0:A5:25:28:7E:DE:75:79:C4:6A:E2:CC:24
+
+            X509v3 Subject Alternative Name: 
+                email:cli@dfw.herle.net
+            X509v3 Issuer Alternative Name: 
+                DirName:/C=US/ST=TX/L=Dallas/O=Snakeoil Peddlers Inc./CN=xca.dfw.herle.net.dfw.herle.net, email:certadmin@xca.dfw.herle.net
+    Signature Algorithm: sha1WithRSAEncryption
+         4f:e8:81:79:d8:21:dc:74:2a:8e:4a:68:f8:7f:72:03:0b:17:
+         9a:de:a9:fa:32:f1:17:86:1d:10:4a:06:16:f0:8a:f0:5c:be:
+         a2:65:0b:5e:72:03:da:fb:cf:70:2b:71:0c:90:ff:ab:59:d9:
+         6f:b8:42:d7:ea:5c:7f:db:e1:8e:2f:16:ac:b8:01:01:99:b6:
+         54:5f:80:76:aa:52:9c:ed:e8:d1:62:19:98:f0:43:ca:16:3c:
+         24:5c:cf:9f:10:84:f7:d5:f3:3a:1d:7b:b2:56:8a:c4:c9:7d:
+         9d:6d:b9:c3:06:c5:2f:af:3e:8a:4f:07:15:9e:49:e6:bf:0e:
+         fb:02:61:45:fa:1f:b0:61:f5:41:35:2f:52:25:ca:16:45:77:
+         4f:0e:46:18:d2:85:5e:b2:7b:ff:e8:b8:d1:61:f5:60:23:5a:
+         fc:4a:5d:42:42:96:ef:16:96:47:fa:8d:f0:87:de:d6:14:c1:
+         75:53:a7:05:ef:9f:49:60:ab:20:a7:af:39:47:e8:7c:bf:e0:
+         db:4a:f5:52:35:d1:d1:bc:d3:28:b6:26:61:6a:02:d9:33:8e:
+         f5:75:84:9b:bf:65:71:a6:63:9f:26:47:34:dd:dd:cd:f9:d7:
+         6b:20:8c:33:80:7c:39:c2:ae:5d:92:d8:ef:39:8f:58:67:17:
+         b9:29:7d:5c
+-----BEGIN CERTIFICATE-----
+MIIFFzCCA/+gAwIBAgICUGIwDQYJKoZIhvcNAQEFBQAwgZQxCzAJBgNVBAYTAlVT
+MQswCQYDVQQIEwJUWDEPMA0GA1UEBxMGRGFsbGFzMR8wHQYDVQQKExZTbmFrZW9p
+bCBQZWRkbGVycyBJbmMuMRowGAYDVQQDExF4Y2EuZGZ3LmhlcmxlLm5ldDEqMCgG
+CSqGSIb3DQEJARYbY2VydGFkbWluQHhjYS5kZncuaGVybGUubmV0MB4XDTE4MDQw
+MjAxNDk0OVoXDTE5MDQwMjAxNDk0OVowgYoxCzAJBgNVBAYTAlVTMQswCQYDVQQI
+EwJUWDEPMA0GA1UEBxMGRGFsbGFzMR8wHQYDVQQKExZTbmFrZW9pbCBQZWRkbGVy
+cyBJbmMuMRowGAYDVQQDFBFjbGlAZGZ3LmhlcmxlLm5ldDEgMB4GCSqGSIb3DQEJ
+ARYRY2xpQGRmdy5oZXJsZS5uZXQwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEK
+AoIBAQCr5IyzvozJ/AgQmEpmUz4MtJYY/Mh11p/dfapPjiC9/4bCDLtiCdi8usaN
+4RtO4c8SSPMjZLlGS1ZwK9kI+4F/7m8pw574V73iDRwSd+CMo8lEZ6Ok1/q07un0
+KkTfuBUz+U9ebYEHI418NTtjDgPxtbjuMe8Citg8byDMD6B2ioBddnCZ+kv9l6DW
+3ASjK+aTTdo+I2mWcx9fBNaM1UshS+nzIcX8SOvqkxp449oqBP+Yn2Edk9ogCnk+
+LjDJWLS5daM09EcxGIBtZh2nlnCZt8gipTMVVNSRhPMudLExqR44xjZXECxsvtgo
++MLwMcRxubht6mfMAQH2Em3ciQoxAgMBAAGjggF5MIIBdTARBglghkgBhvhCAQEE
+BAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwIwCwYDVR0PBAQDAgP4MAkGA1UdEwQC
+MAAwMAYJYIZIAYb4QgENBCMWIUNlcnRpZmljYXRlIGlzc3VlZCBieSBTbmFrZW9p
+bCBDQTAdBgNVHQ4EFgQUa30w7Q4LF72arUjFOC2ekKdWg8wwHwYDVR0jBBgwFoAU
+xVtiyBZhsfClJSh+3nV5xGrizCQwHAYDVR0RBBUwE4ERY2xpQGRmdy5oZXJsZS5u
+ZXQwgaIGA1UdEgSBmjCBl6R4MHYxCzAJBgNVBAYTAlVTMQswCQYDVQQIDAJUWDEP
+MA0GA1UEBwwGRGFsbGFzMR8wHQYDVQQKDBZTbmFrZW9pbCBQZWRkbGVycyBJbmMu
+MSgwJgYDVQQDDB94Y2EuZGZ3LmhlcmxlLm5ldC5kZncuaGVybGUubmV0gRtjZXJ0
+YWRtaW5AeGNhLmRmdy5oZXJsZS5uZXQwDQYJKoZIhvcNAQEFBQADggEBAE/ogXnY
+Idx0Ko5KaPh/cgMLF5reqfoy8ReGHRBKBhbwivBcvqJlC15yA9r7z3ArcQyQ/6tZ
+2W+4QtfqXH/b4Y4vFqy4AQGZtlRfgHaqUpzt6NFiGZjwQ8oWPCRcz58QhPfV8zod
+e7JWisTJfZ1tucMGxS+vPopPBxWeSea/DvsCYUX6H7Bh9UE1L1IlyhZFd08ORhjS
+hV6ye//ouNFh9WAjWvxKXUJClu8Wlkf6jfCH3tYUwXVTpwXvn0lgqyCnrzlH6Hy/
+4NtK9VI10dG80yi2JmFqAtkzjvV1hJu/ZXGmY58mRzTd3c3512sgjDOAfDnCrl2S
+2O85j1hnF7kpfVw=
+-----END CERTIFICATE-----

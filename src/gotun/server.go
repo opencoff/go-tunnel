@@ -49,7 +49,6 @@ type TCPServer struct {
 
 	pool *sync.Pool
 
-	stop chan bool
 	wg   sync.WaitGroup
 
 	grl *ratelimit.Ratelimiter
@@ -103,7 +102,6 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 			LocalAddr: resolveAddr(lc.Connect.Bind),
 			KeepAlive: connectionKeepAlive,
 		},
-		stop: make(chan bool),
 		grl:  rl,
 		prl:  pl,
 	}
@@ -129,7 +127,7 @@ func (p *TCPServer) Start() {
 // Stop server
 func (p *TCPServer) Stop() {
 	p.cancel()
-	close(p.stop)
+	p.TCPListener.Close()	// forcibly
 	p.wg.Wait()
 	p.log.Info("TCP server shutdown")
 }
@@ -137,7 +135,20 @@ func (p *TCPServer) Stop() {
 func (p *TCPServer) serve() {
 	// XXX n consecutive errors and kill the server?
 	for {
+		var quit bool
+
 		conn, err := p.Accept()
+		select {
+		case <- p.ctx.Done():
+			quit = true
+		default:
+			quit = false
+		}
+
+		if quit {
+			break
+		}
+
 		if err != nil {
 			// Try again?
 			time.Sleep(2 * time.Second)
@@ -264,7 +275,7 @@ func (p *TCPServer) Accept() (net.Conn, error) {
 		nc, err := ln.Accept()
 
 		select {
-		case <-p.stop:
+		case <-p.ctx.Done():
 			if err == nil {
 				nc.Close()
 			}

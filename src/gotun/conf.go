@@ -21,7 +21,7 @@ import (
 type Conf struct {
 	Logging  string       `yaml:"log"`
 	LogLevel string       `yaml:"loglevel"`
-	Listen   []ListenConf `yaml:"listen"`
+	Listen   []*ListenConf `yaml:"listen"`
 }
 
 type ListenConf struct {
@@ -178,21 +178,23 @@ func validate(c *Conf) error {
 				}
 			}
 
-			auth := strings.ToLower(t.ClientAuth)
-			switch auth {
-			case "required", "optional":
-				if len(t.ClientCA) == 0 {
-					return fmt.Errorf("%s: TLS client-auth requires a valid CA certificate", l.Addr)
+			if len(t.ClientAuth) > 0 {
+				auth := strings.ToLower(t.ClientAuth)
+				switch auth {
+				case "required", "optional":
+					if len(t.ClientCA) == 0 {
+						return fmt.Errorf("%s: TLS client-auth requires a valid CA certificate", l.Addr)
+					}
+
+				case "no", "disabled", "false":
+					break
+
+				default:
+					return fmt.Errorf("%s: unknown client-auth type %s", l.Addr, t.ClientAuth)
 				}
 
-			case "no", "disabled", "false":
-				break
-
-			default:
-				return fmt.Errorf("%s: unknown client-auth type %s", l.Addr, t.ClientAuth)
+				t.ClientAuth = auth
 			}
-
-			t.ClientAuth = auth
 		}
 	}
 	return nil
