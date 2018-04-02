@@ -19,15 +19,16 @@ import (
 
 // List of config entries
 type Conf struct {
-	Logging  string       `yaml:"log"`
-	LogLevel string       `yaml:"loglevel"`
+	Logging  string        `yaml:"log"`
+	LogLevel string        `yaml:"loglevel"`
 	Listen   []*ListenConf `yaml:"listen"`
 }
 
 type ListenConf struct {
-	Addr  string   `yaml:"address"`
-	Allow []subnet `yaml:"allow"`
-	Deny  []subnet `yaml:"deny"`
+	Addr    string   `yaml:"address"`
+	Allow   []subnet `yaml:"allow"`
+	Deny    []subnet `yaml:"deny"`
+	Timeout Timeouts `yaml:"timeout"`
 
 	// optional TLS info; will listen on TLS socket if provided
 	Tls *TlsServerConf `yaml:"tls"`
@@ -48,6 +49,13 @@ type subnet struct {
 	net.IPNet
 }
 
+// List of various timeouts in units of seconds
+type Timeouts struct {
+	Connect int
+	Read    int
+	Write   int
+}
+
 // Connect info
 type ConnectConf struct {
 	Addr string `yaml:"address"`
@@ -61,14 +69,19 @@ type TlsServerConf struct {
 	Certdir    string
 	Cert       string
 	Key        string
-	ClientAuth string
+	ClientCert string
+
+	// this can be a file or dir. It is needed to verify the client provided
+	// certificate.
 	ClientCA   string
 }
 
 // Tls client conf
 type TlsClientConf struct {
-	Cert string
+	// This can be a file or a dir. This is for verifying the
+	// server provided certificate.
 	Ca   string
+	Cert string
 	Key  string
 
 	Server string `yaml:"servername"`
@@ -124,6 +137,17 @@ func defaults(c *Conf) *Conf {
 		if l.Ratelimit.PerHost == 0 {
 			l.Ratelimit.PerHost = 10
 		}
+		t := &l.Timeout
+		if t.Connect == 0 {
+			t.Connect = 5
+		}
+		if t.Read == 0 {
+			t.Read = 10
+		}
+
+		if t.Write == 0 {
+			t.Write = 30
+		}
 
 	}
 
@@ -178,8 +202,8 @@ func validate(c *Conf) error {
 				}
 			}
 
-			if len(t.ClientAuth) > 0 {
-				auth := strings.ToLower(t.ClientAuth)
+			if len(t.ClientCert) > 0 {
+				auth := strings.ToLower(t.ClientCert)
 				switch auth {
 				case "required", "optional":
 					if len(t.ClientCA) == 0 {
@@ -190,10 +214,10 @@ func validate(c *Conf) error {
 					break
 
 				default:
-					return fmt.Errorf("%s: unknown client-auth type %s", l.Addr, t.ClientAuth)
+					return fmt.Errorf("%s: unknown client-auth type %s", l.Addr, t.ClientCert)
 				}
 
-				t.ClientAuth = auth
+				t.ClientCert = auth
 			}
 		}
 	}
@@ -213,9 +237,9 @@ func (c *Conf) Dump(w io.Writer) {
 				fmt.Fprintf(w, " with tls using cert %s, key %s",
 					t.Cert, t.Key)
 			}
-			if t.ClientAuth == "required" {
+			if t.ClientCert == "required" {
 				fmt.Fprintf(w, " requiring client auth")
-			} else if t.ClientAuth == "optional" {
+			} else if t.ClientCert == "optional" {
 				fmt.Fprintf(w, " with optional client auth")
 			}
 		}

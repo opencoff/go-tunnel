@@ -13,6 +13,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -24,12 +25,8 @@ import (
 	"github.com/opencoff/go-ratelimit"
 )
 
-// XXX These should be in a config file
-const dialerTimeout = 3 * time.Second
-const connectionKeepAlive = 20 * time.Second
-const readTimeout = 20 * time.Second
-const writeTimeout = 60 * time.Second
-
+// Encapsulates info needed to be a plain listener or a TLS listener.
+// And has a dialer to connect to a plain or TLS endpoint
 type TCPServer struct {
 	*net.TCPListener
 
@@ -39,25 +36,41 @@ type TCPServer struct {
 	// optional - will be set only if listening via TLS
 	tls *tls.Config
 
+	// optional - will be set only if connecting to a TLS peer
 	clientTls *tls.Config
 
-	// Dialer - will be either a plain dialer or TLS dialer
 	dial *net.Dialer
 
+	// for seamless shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
 
 	pool *sync.Pool
 
-	wg   sync.WaitGroup
+	activeConn map[string]*relay
+	mu         sync.Mutex
+
+	wg sync.WaitGroup
 
 	grl *ratelimit.Ratelimiter
 	prl *ratelimit.PerIPRatelimiter
 
-	// logger
 	log *L.Logger
 }
 
+// relay context
+type relay struct {
+	ctx context.Context
+
+	lconn net.Conn
+	rconn net.Conn
+
+	lhs string
+	rhs string
+}
+
+// Make a new instance of a TCPServer and return it
+// This function exits on any configuration parsing error.
 func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 	addr := lc.Addr
 	la, err := net.ResolveTCPAddr("tcp4", addr)
@@ -98,12 +111,12 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 			New: func() interface{} { return make([]byte, 65536) },
 		},
 		dial: &net.Dialer{
-			Timeout:   dialerTimeout,
+			Timeout:   time.Duration(lc.Timeout.Connect) * time.Second,
 			LocalAddr: resolveAddr(lc.Connect.Bind),
-			KeepAlive: connectionKeepAlive,
+			KeepAlive: 25 * time.Second,
 		},
-		grl:  rl,
-		prl:  pl,
+		grl: rl,
+		prl: pl,
 	}
 
 	return p
@@ -127,7 +140,7 @@ func (p *TCPServer) Start() {
 // Stop server
 func (p *TCPServer) Stop() {
 	p.cancel()
-	p.TCPListener.Close()	// forcibly
+	p.TCPListener.Close() // forcibly
 	p.wg.Wait()
 	p.log.Info("TCP server shutdown")
 }
@@ -139,7 +152,7 @@ func (p *TCPServer) serve() {
 
 		conn, err := p.Accept()
 		select {
-		case <- p.ctx.Done():
+		case <-p.ctx.Done():
 			quit = true
 		default:
 			quit = false
@@ -155,28 +168,76 @@ func (p *TCPServer) serve() {
 			continue
 		}
 
-		ctx := context.WithValue(p.ctx, "client", conn.RemoteAddr().String())
+		src := conn.RemoteAddr().String()
+		ctx := context.WithValue(p.ctx, "client", src)
 
 		p.wg.Add(1)
 		go p.handleConn(conn, ctx)
 	}
 }
 
+// handle the relay from 'conn' to the peer and back.
+// this sets up the peer connection before the relay
 func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
-	defer p.wg.Done()
+	src := conn.RemoteAddr().String()
+	r := &relay{
+		ctx:   ctx,
+		lconn: conn,
+		lhs:   fmt.Sprintf("%s-%s", src, conn.LocalAddr().String()),
+	}
+	p.mu.Lock()
+	p.activeConn[src] = r
+	p.mu.Unlock()
+
+	defer func() {
+		p.wg.Done()
+
+		p.mu.Lock()
+		delete(p.activeConn, src)
+		p.mu.Unlock()
+	}()
 
 	peer, err := p.dial.DialContext(ctx, "tcp4", p.Connect.Addr)
 	if err != nil {
 		p.log.Info("can't connect to %s: %s", p.Connect.Addr, err)
+		conn.Close()
 		return
 	}
 
+	r.rhs = fmt.Sprintf("%s-%s", peer.LocalAddr().String(), peer.RemoteAddr().String())
+	r.rconn = peer
+
+	lhs := conn.RemoteAddr().String()
+	rhs_theirs := peer.RemoteAddr().String()
+
+	p.log.Debug("LHS %s, RHS %s", r.lhs, r.rhs)
 	if p.tls != nil {
-		conn = tls.Server(conn, p.tls)
+		econn := tls.Server(conn, p.tls)
+		err := econn.Handshake()
+		if err != nil {
+			p.log.Warn("can't establish TLS with %s: %s", conn.RemoteAddr().String(), err)
+			conn.Close()
+			peer.Close()
+			return
+		}
+
+		st := econn.ConnectionState()
+		p.log.Debug("tls server handshake complete; Version %x, Cipher %x", st.Version, st.CipherSuite)
+		conn = econn
 	}
 
 	if p.clientTls != nil {
-		peer = tls.Client(conn, p.clientTls)
+		econn := tls.Client(peer, p.clientTls)
+		err := econn.Handshake()
+		if err != nil {
+			p.log.Warn("can't establish TLS with %s: %s", peer.RemoteAddr().String(), err)
+			conn.Close()
+			peer.Close()
+			return
+		}
+		st := econn.ConnectionState()
+		p.log.Debug("tls client handshake complete; Version %x, Cipher %x", st.Version, st.CipherSuite)
+		peer = econn
 	}
 
 	var wg sync.WaitGroup
@@ -185,20 +246,25 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	b1 := p.getBuf()
 
 	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		cancellableCopy(conn, peer, ctx, b0)
-	}()
-
-	go func() {
-		defer wg.Done()
-		cancellableCopy(peer, conn, ctx, b1)
-	}()
-
 	ch := make(chan bool)
 	go func() {
 		wg.Wait()
 		close(ch)
+	}()
+
+	var r0, r1, w0, w1 int
+	go func() {
+		defer wg.Done()
+		r0, w0 = p.cancellableCopy(conn, peer, ctx, b0)
+		conn.Close()
+		peer.Close()
+	}()
+
+	go func() {
+		defer wg.Done()
+		r1, w1 = p.cancellableCopy(peer, conn, ctx, b1)
+		conn.Close()
+		peer.Close()
 	}()
 
 	select {
@@ -211,8 +277,7 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	p.putBuf(b0)
 	p.putBuf(b1)
 
-	conn.Close()
-	peer.Close()
+	p.log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", lhs, r1, w0, rhs_theirs, r0, w1)
 }
 
 func (p *TCPServer) getBuf() []byte {
@@ -225,10 +290,11 @@ func (p *TCPServer) putBuf(b []byte) {
 }
 
 // interruptible copy
-func cancellableCopy(d, s net.Conn, ctx context.Context, buf []byte) {
+func (p *TCPServer) cancellableCopy(d, s net.Conn, ctx context.Context, buf []byte) (r, w int) {
+
 	ch := make(chan bool)
 	go func() {
-		copyBuf(d, s, buf)
+		r, w = p.copyBuf(d, s, buf)
 		close(ch)
 	}()
 
@@ -236,7 +302,9 @@ func cancellableCopy(d, s net.Conn, ctx context.Context, buf []byte) {
 		select {
 		case <-ch:
 			return
+
 		case <-ctx.Done():
+			p.log.Debug("cancellable copy: FORCE CANCEL")
 			// This forces both copy go-routines to end the for{} loops.
 			d.Close()
 			s.Close()
@@ -245,13 +313,18 @@ func cancellableCopy(d, s net.Conn, ctx context.Context, buf []byte) {
 }
 
 // copy from 's' to 'd' using 'buf'
-func copyBuf(d, s net.Conn, buf []byte) {
+func (p *TCPServer) copyBuf(d, s net.Conn, buf []byte) (x, y int) {
+	rto := time.Duration(p.Timeout.Read) * time.Second
+	wto := time.Duration(p.Timeout.Write) * time.Second
 	for {
+		s.SetReadDeadline(time.Now().Add(rto))
 		nr, err := s.Read(buf)
 		if err != nil && err != io.EOF && err != context.Canceled && !isReset(err) {
 			return
 		}
 		if nr > 0 {
+			s.SetWriteDeadline(time.Now().Add(wto))
+			x += nr
 			nw, err := d.Write(buf[:nr])
 			if err != nil {
 				return
@@ -259,6 +332,7 @@ func copyBuf(d, s net.Conn, buf []byte) {
 			if nw != nr {
 				return
 			}
+			y += nw
 		}
 		if err != nil || nr == 0 {
 			return
@@ -346,25 +420,29 @@ func parseTLSServerConf(lc *ListenConf, log *L.Logger) *tls.Config {
 			if err != nil {
 				return nil, err
 			}
+
+			log.Debug("SNI: %s -> {%s, %s}", c.ServerName, crt, key)
 			return &cert, nil
 		}
 
 	} else {
 		cert, err := tls.LoadX509KeyPair(t.Cert, t.Key)
 		if err != nil {
-			die("%s: can't load server cert %s/%s: %s", lc.Addr, t.Cert, t.Key, err)
+			die("%s: can't load server cert {%s, %s}: %s", lc.Addr, t.Cert, t.Key, err)
 		}
 
+		log.Debug("Loading {%s, %s}", t.Cert, t.Key)
 		cfg.Certificates = []tls.Certificate{cert}
 	}
 
 	needCA := true
-	switch t.ClientAuth {
+	switch t.ClientCert {
 	case "required":
 		cfg.ClientAuth = tls.RequireAndVerifyClientCert
 
 	case "optional":
 		cfg.ClientAuth = tls.VerifyClientCertIfGiven
+		// XXX We may have to write a VerifyPeerCertificate() callback to verify
 
 	default:
 		needCA = false
@@ -374,10 +452,11 @@ func parseTLSServerConf(lc *ListenConf, log *L.Logger) *tls.Config {
 	if needCA {
 		var err error
 
-		cfg.ClientCAs, err = ReadCA(t.ClientCA)
+		cfg.ClientCAs, err = ReadCA(t.ClientCA, log)
 		if err != nil {
 			die("%s: can't read client CA in %s: %s", lc.Addr, t.ClientCA, err)
 		}
+		log.Debug("using %s for verifying client certs", t.ClientCA)
 	}
 
 	return cfg
@@ -397,7 +476,7 @@ func parseTLSClientConf(lc *ListenConf, log *L.Logger) *tls.Config {
 
 	var err error
 
-	cfg.RootCAs, err = ReadCA(t.Ca)
+	cfg.RootCAs, err = ReadCA(t.Ca, log)
 	if err != nil {
 		die("%s: can't load TLS client CA from %s: %s", lc.Addr, t.Ca, err)
 	}
@@ -405,8 +484,9 @@ func parseTLSClientConf(lc *ListenConf, log *L.Logger) *tls.Config {
 	if len(t.Cert) > 0 && len(t.Key) > 0 {
 		cert, err := tls.LoadX509KeyPair(t.Cert, t.Key)
 		if err != nil {
-			die("%s: can't load TLS client cert/key %s/%s: %s", lc.Addr, t.Cert, t.Key, err)
+			die("%s: can't load TLS client cert/key {%s, %s}: %s", lc.Addr, t.Cert, t.Key, err)
 		}
+		log.Debug("loaded client cert %s/%s", t.Cert, t.Key)
 		cfg.Certificates = []tls.Certificate{cert}
 	}
 
@@ -418,7 +498,7 @@ func parseTLSClientConf(lc *ListenConf, log *L.Logger) *tls.Config {
 	return cfg
 }
 
-func ReadCA(nm string) (*x509.CertPool, error) {
+func ReadCA(nm string, log *L.Logger) (*x509.CertPool, error) {
 	var files []string
 
 	if isdir(nm) {
@@ -432,6 +512,7 @@ func ReadCA(nm string) (*x509.CertPool, error) {
 				files[i] = fi.Name()
 			}
 		}
+		log.Debug("Found %d files in CA dir %s", len(files), nm)
 	} else {
 		files = []string{nm}
 	}
@@ -444,12 +525,15 @@ func ReadCA(nm string) (*x509.CertPool, error) {
 		if err != nil {
 			return nil, err
 		}
+		log.Debug("Added CA bundle from %s ..", nm)
 		p.AppendCertsFromPEM(pem)
 	}
 
 	if s := p.Subjects(); len(s) == 0 {
 		return nil, errNoCACerts
 	}
+
+	log.Debug("Total %d individual CA certificates loaded", len(p.Subjects()))
 
 	return p, nil
 }
