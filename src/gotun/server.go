@@ -25,10 +25,10 @@ import (
 )
 
 // XXX These should be in a config file
-const dialerTimeout = 3        // seconds
-const connectionKeepAlive = 20 // seconds
-const readTimeout = 20         // seconds
-const writeTimeout = 60        // seconds; 3x read timeout. Enough time?
+const dialerTimeout = 3 * time.Second
+const connectionKeepAlive = 20 * time.Second
+const readTimeout = 20 * time.Second
+const writeTimeout = 60 * time.Second
 
 type TCPServer struct {
 	*net.TCPListener
@@ -60,12 +60,12 @@ type TCPServer struct {
 
 func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 	addr := lc.Addr
-	la, err := net.ResolveTCPAddr("tcp", addr)
+	la, err := net.ResolveTCPAddr("tcp4", addr)
 	if err != nil {
 		die("Can't resolve %s: %s", addr, err)
 	}
 
-	ln, err := net.ListenTCP("tcp", la)
+	ln, err := net.ListenTCP("tcp4", la)
 	if err != nil {
 		die("Can't listen on %s: %s", addr, err)
 	}
@@ -165,7 +165,7 @@ func (p *TCPServer) serve() {
 func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	defer p.wg.Done()
 
-	peer, err := p.dial.DialContext(ctx, "tcp", p.Connect.Addr)
+	peer, err := p.dial.DialContext(ctx, "tcp4", p.Connect.Addr)
 	if err != nil {
 		p.log.Info("can't connect to %s: %s", p.Connect.Addr, err)
 		return
@@ -465,7 +465,7 @@ func resolveAddr(addr string) net.Addr {
 		return &net.IPAddr{IP: a[0]}
 	}
 	// XXX Gah
-	return &net.IPAddr{IP: net.IPv4zero}
+	return nil
 }
 
 var (
