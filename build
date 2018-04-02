@@ -334,7 +334,7 @@ else
     echo "Building $rev, $cross $msg .."
 
     for p in $all; do 
-        echo "   $p .."
+        echo "   $Bindir/$p .."
         $e eval go build -o $Bindir/$p $isuffix "$ldflags" $p || exit 1
     done
 fi

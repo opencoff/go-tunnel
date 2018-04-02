@@ -107,6 +107,7 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 		log:         log,
 		ctx:         ctx,
 		cancel:      cancel,
+		activeConn:  make(map[string]*relay),
 		pool: &sync.Pool{
 			New: func() interface{} { return make([]byte, 65536) },
 		},
@@ -140,34 +141,34 @@ func (p *TCPServer) Start() {
 // Stop server
 func (p *TCPServer) Stop() {
 	p.cancel()
-	p.TCPListener.Close() // forcibly
+	p.TCPListener.Close() // causes Accept() to abort
 	p.wg.Wait()
 	p.log.Info("TCP server shutdown")
 }
 
 func (p *TCPServer) serve() {
-	// XXX n consecutive errors and kill the server?
+	n := 0
 	for {
-		var quit bool
-
 		conn, err := p.Accept()
 		select {
 		case <-p.ctx.Done():
-			quit = true
+			return
 		default:
-			quit = false
-		}
-
-		if quit {
-			break
 		}
 
 		if err != nil {
-			// Try again?
+			n += 1
+			if n >= 10 {
+				p.log.Warn("Accept failure: %s", err)
+				p.log.Warn("10 consecutive server accept() failure; bailing ..")
+				return
+			}
+
 			time.Sleep(2 * time.Second)
 			continue
 		}
 
+		n = 0
 		src := conn.RemoteAddr().String()
 		ctx := context.WithValue(p.ctx, "client", src)
 
@@ -222,7 +223,8 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		}
 
 		st := econn.ConnectionState()
-		p.log.Debug("tls server handshake complete; Version %x, Cipher %x", st.Version, st.CipherSuite)
+		p.log.Debug("tls server handshake with %s complete; Version %#x, Cipher %#x", lhs,
+			st.Version, st.CipherSuite)
 		conn = econn
 	}
 
@@ -236,7 +238,8 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 			return
 		}
 		st := econn.ConnectionState()
-		p.log.Debug("tls client handshake complete; Version %x, Cipher %x", st.Version, st.CipherSuite)
+		p.log.Debug("tls client handshake with %s complete; Version %#x, Cipher %#x", rhs_theirs, 
+			st.Version, st.CipherSuite)
 		peer = econn
 	}
 
