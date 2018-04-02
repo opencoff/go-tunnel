@@ -180,43 +180,43 @@ func (p *TCPServer) serve() {
 // handle the relay from 'conn' to the peer and back.
 // this sets up the peer connection before the relay
 func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
-	src := conn.RemoteAddr().String()
+	lhs := conn.RemoteAddr().String()
 	r := &relay{
 		ctx:   ctx,
 		lconn: conn,
-		lhs:   fmt.Sprintf("%s-%s", src, conn.LocalAddr().String()),
+		lhs:   fmt.Sprintf("%s-%s", lhs, conn.LocalAddr().String()),
 	}
 	p.mu.Lock()
-	p.activeConn[src] = r
+	p.activeConn[lhs] = r
 	p.mu.Unlock()
 
 	defer func() {
 		p.wg.Done()
 
 		p.mu.Lock()
-		delete(p.activeConn, src)
+		delete(p.activeConn, lhs)
 		p.mu.Unlock()
 	}()
 
 	peer, err := p.dial.DialContext(ctx, "tcp4", p.Connect.Addr)
 	if err != nil {
-		p.log.Info("can't connect to %s: %s", p.Connect.Addr, err)
+		p.log.Warn("can't connect to %s: %s", p.Connect.Addr, err)
 		conn.Close()
 		return
 	}
 
-	r.rhs = fmt.Sprintf("%s-%s", peer.LocalAddr().String(), peer.RemoteAddr().String())
 	r.rconn = peer
 
-	lhs := conn.RemoteAddr().String()
+	// we grab the printable info before the socket is closed
 	rhs_theirs := peer.RemoteAddr().String()
+	r.rhs = fmt.Sprintf("%s-%s", peer.LocalAddr().String(), rhs_theirs)
 
 	p.log.Debug("LHS %s, RHS %s", r.lhs, r.rhs)
 	if p.tls != nil {
 		econn := tls.Server(conn, p.tls)
 		err := econn.Handshake()
 		if err != nil {
-			p.log.Warn("can't establish TLS with %s: %s", conn.RemoteAddr().String(), err)
+			p.log.Warn("can't establish TLS with %s: %s", lhs, err)
 			conn.Close()
 			peer.Close()
 			return
@@ -232,7 +232,7 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		econn := tls.Client(peer, p.clientTls)
 		err := econn.Handshake()
 		if err != nil {
-			p.log.Warn("can't establish TLS with %s: %s", peer.RemoteAddr().String(), err)
+			p.log.Warn("can't establish TLS with %s: %s", rhs_theirs, err)
 			conn.Close()
 			peer.Close()
 			return
@@ -283,6 +283,7 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	p.log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", lhs, r1, w0, rhs_theirs, r0, w1)
 }
 
+
 func (p *TCPServer) getBuf() []byte {
 	b := p.pool.Get()
 	return b.([]byte)
@@ -307,7 +308,6 @@ func (p *TCPServer) cancellableCopy(d, s net.Conn, ctx context.Context, buf []by
 			return
 
 		case <-ctx.Done():
-			p.log.Debug("cancellable copy: FORCE CANCEL")
 			// This forces both copy go-routines to end the for{} loops.
 			d.Close()
 			s.Close()
