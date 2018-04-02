@@ -119,8 +119,6 @@ The config file is a YAML v2 document. An example is below:
 		    key: /path/to/a.key
 
 
-# vim: expandtab:sw=4:ts=4:tw=88:
-
 ### Examples
 TBD
 
@@ -133,8 +131,7 @@ allow/deny rules. The rules are evaluated in the following order:
 - Explicit denial takes precedence over explicit allow
 - Empty allow list is the same as "allow all"
 
-Example of allow/deny combinations
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#### Example of allow/deny combinations
 
 1. Only allow specific subnets and deny everyone else:
 
@@ -153,7 +150,6 @@ Example of allow/deny combinations
 
     allow: [ 192.168.55.0/24, 172.16.10.0/24, 127.0.0.1/8 ],
     deny:  [ 192.168.1.1/32, 192.168.80.0/24, 172.16.5.0/24 ]
-
 
 
 ## Development Notes
