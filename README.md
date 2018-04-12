@@ -43,13 +43,18 @@ client both use certificates to authenticate each other.
 You need a reasonably new Golang toolchain (1.8+). And the `go`
 executable needs to be in your path. Then run:
 
+    ./dep.sh ensure
+
     ./build
 
-The script will build the binary `gotun` and places it in TARGET specific
+`dep.sh` will download the vendor dependencies into the `vendor/src`
+directory. These dependencies are named in `vendor/manifest.txt`.
+
+`build` will build the binary `gotun` and places it in TARGET specific
 directory. e.g., for linux-amd64, the binaries will be in `./bin/linux-amd64`;
 and OS X, it will be in `./bin/darwin-amd64` and so on.
 
-You can cross-compile by passing appropriate architecture names to
+You can cross-compile 'go-tun' by passing appropriate architecture names to
 the script. e.g., to build on host OS X for openbsd-amd64:
 
     ./build --arch=openbsd-amd64
