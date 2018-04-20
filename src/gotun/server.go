@@ -243,6 +243,18 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		peer = econn
 	}
 
+	// Proxy protocol handling
+	switch p.Connect.ProxyProtocol {
+	case "v1":
+		a1 := r.lconn.RemoteAddr().(*net.TCPAddr)
+		a2 := r.lconn.LocalAddr().(*net.TCPAddr)
+		s := fmt.Sprintf("PROXY %s %s %d %d\r\n",
+			a1.IP.String(), a2.IP.String(), a1.Port, a2.Port)
+		peer.Write([]byte(s))
+	default:
+	}
+
+
 	var wg sync.WaitGroup
 
 	b0 := p.getBuf()

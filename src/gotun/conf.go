@@ -60,6 +60,7 @@ type Timeouts struct {
 type ConnectConf struct {
 	Addr string `yaml:"address"`
 	Bind string
+	ProxyProtocol string
 	Tls  *TlsClientConf `yaml:"tls"`
 }
 
@@ -180,10 +181,19 @@ func validate(c *Conf) error {
 		}
 		nm := c.Addr[:i]
 
+		switch c.ProxyProtocol {
+		case "v1":
+		default:
+			if len(c.ProxyProtocol) > 0 {
+				return fmt.Errorf("%s: no support for proxy-protocol %s", c.ProxyProtocol)
+			}
+		}
 		if t := c.Tls; t != nil {
 			if len(t.Ca) == 0 {
 				return fmt.Errorf("%s: TLS connect requires a valid CA", l.Addr)
 			}
+			// if what we are connecting to is not an IP address, treat it as a
+			// hostname and let crypto/tls validate hostname against the cert.
 			if ip := net.ParseIP(nm); ip == nil {
 				if len(t.Server) == 0 {
 					t.Server = nm
@@ -247,6 +257,9 @@ func (c *Conf) Dump(w io.Writer) {
 		fmt.Fprintf(w, "\n\tconnect to %s", c.Addr)
 		if len(c.Bind) > 0 {
 			fmt.Fprintf(w, " from %s", c.Bind)
+		}
+		if len(c.ProxyProtocol) > 0 {
+			fmt.Fprintf(w, " using proxy-protocol %s", c.ProxyProtocol)
 		}
 		if t := c.Tls; t != nil {
 			fmt.Fprintf(w, " using tls cert %s, key %s, ca %s",
