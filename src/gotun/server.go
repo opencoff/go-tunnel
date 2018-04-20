@@ -238,7 +238,7 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 			return
 		}
 		st := econn.ConnectionState()
-		p.log.Debug("tls client handshake with %s complete; Version %#x, Cipher %#x", rhs_theirs, 
+		p.log.Debug("tls client handshake with %s complete; Version %#x, Cipher %#x", rhs_theirs,
 			st.Version, st.CipherSuite)
 		peer = econn
 	}
@@ -282,7 +282,6 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 
 	p.log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", lhs, r1, w0, rhs_theirs, r0, w1)
 }
-
 
 func (p *TCPServer) getBuf() []byte {
 	b := p.pool.Get()
@@ -402,7 +401,21 @@ func parseTLSServerConf(lc *ListenConf, log *L.Logger) *tls.Config {
 	}
 
 	cfg := &tls.Config{
+		MinVersion:             tls.VersionTLS12,
 		SessionTicketsDisabled: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+
+			// Best disabled, as they don't provide Forward Secrecy,
+			// but might be necessary for some clients
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
 	}
 
 	if t.Sni {
@@ -473,8 +486,13 @@ func parseTLSClientConf(lc *ListenConf, log *L.Logger) *tls.Config {
 	}
 
 	cfg := &tls.Config{
-		ServerName:             t.Server,
-		SessionTicketsDisabled: true,
+		ServerName:               t.Server,
+		PreferServerCipherSuites: true,
+		SessionTicketsDisabled:   true,
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP256,
+			tls.X25519,
+		},
 	}
 
 	var err error

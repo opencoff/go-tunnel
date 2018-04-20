@@ -73,7 +73,7 @@ type TlsServerConf struct {
 
 	// this can be a file or dir. It is needed to verify the client provided
 	// certificate.
-	ClientCA   string
+	ClientCA string
 }
 
 // Tls client conf
