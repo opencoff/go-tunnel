@@ -41,6 +41,19 @@ scenes, go-tunnel is relaying the packets from `10.0.0.5` to `172.16.55.3` via T
 The config file shown above actually demonstrates a really secure tunnel - where the server and
 client both use certificates to authenticate each other.
 
+Assuming the config on "Gotunnel-A" is in file `a.conf`, and the config on "Gotunnel-B" is in 
+`b.conf`, to run the above example, on host "Gotunnel-A":
+
+    gotun -d a.conf
+
+And, on host "Gotunnel-B":
+
+    gotun -d b.conf
+
+
+The `-d` flag runs `gotun` in debug mode - where the logs are sent
+to STDOUT.
+
 ### Building go-tunnel
 You need a reasonably new Golang toolchain (1.8+). And the `go`
 executable needs to be in your path. Then run:
@@ -69,6 +82,22 @@ The script also has other options. To see them::
 
     ./build --help
 
+
+### Running go-tunnel
+`gotun` takes a YAML config file as its sole command line argument. The server
+does *not* fork itself into the background. If you need that capability, explore your
+platform's init toolchain (e.g., ``start-stop-daemon``).
+
+The server can run in debug mode; e.g., on Linux x86\_64:
+
+    ./bin/linux-amd64/gotun -d etc/gotun.conf
+
+
+In debug mode, the logs are sent to STDOUT and the debug level is set to DEBUG
+(i.e., verbose).
+
+In the absence of the ``-d`` flag, the default log level is INFO or
+whatever is set in the config file.
 
 ### Config File
 The config file is a YAML v2 document. An example is below:
