@@ -28,6 +28,7 @@ PWD=`pwd`
 Static=0
 Dryrun=0
 Prodver=0.1
+[ -f $PWD/version ] && Prodver=$(cat $PWD/version)
 
 hostos=$(go env GOHOSTOS)       || exit 1
 hostcpu=$(go env GOHOSTARCH)    || exit 1

@@ -1,0 +1,6 @@
+#! /bin/bash
+
+
+#  Enable service startup from all runlevels
+update-rc.d  gotun start 99 2 3 4 5 . stop 10 0 1 6 .
+

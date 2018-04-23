@@ -1,0 +1,14 @@
+Package: gotun
+Architecture: %(arch)s
+Section: net
+Version: %(version)s
+Priority: optional
+Maintainer: Sudhi Herle <sudhi@herle.net>
+Description: Robust SSL/TLS tunneler written in golang.
+ gotun functions as TLS client and TLS Server. The TLS Server
+ can unwrap TLS and forward the plaintext to one or more backend
+ servers. The server supports simple ACLs, TLS SNI and per-IP
+ ratelimits. The most important capability is that the TLS server
+ supports TLS client certificates.
+ .
+ Version %(version)s built on %(date)s.

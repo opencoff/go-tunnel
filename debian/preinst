@@ -1,0 +1,6 @@
+#! /bin/bash
+
+#
+# Preinst setups
+
+update-rc.d  -f gotun remove

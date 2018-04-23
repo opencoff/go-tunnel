@@ -1,0 +1,20 @@
+
+#
+# Manifest for debian version of gotun
+#
+
+# Install the package in this dir first
+#!go build -o %(debdir)s/usr/bin/gotun gotun.go
+cp %(templatedir)s/../bin/linux-%(arch)s/gotun %(debdir)s/usr/bin/gotun
+
+cp %(templatedir)s/gotun.conf   /etc/gotun/gotun.conf.pkg
+
+cp %(templatedir)s/etc.default   /etc/default/gotun
+cp %(templatedir)s/gotun.conf   /usr/share/doc/gotun/gotun.conf
+cp %(srcdir)s/README.md /usr/share/doc/gotun/README.Debian
+
+# Startup script
+cp %(templatedir)s/gotun.init       /etc/init.d/gotun
+
+# EOF
+

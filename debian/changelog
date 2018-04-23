@@ -1,0 +1,6 @@
+gotun (%(version)s) stable; urgency=low
+
+  * This is version %(version)s of SSL/TLS Tunnel
+
+ -- Sudhi Herle <sudhi@herle.net>  %(date)s
+

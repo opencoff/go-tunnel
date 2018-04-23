@@ -1,0 +1,5 @@
+#! /bin/sh
+
+# 1. Remove system startup links
+update-rc.d  -f gotun remove
+exit 0

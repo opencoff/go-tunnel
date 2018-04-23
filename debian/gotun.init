@@ -1,0 +1,83 @@
+#! /bin/sh
+#
+#       Written by Miquel van Smoorenburg <miquels@cistron.nl>.
+#       Modified for Debian GNU/Linux
+#       by Ian Murdock <imurdock@gnu.ai.mit.edu>.
+#          Modified for boa by Bill Allombert <ballombe@debian.org>.
+#          Modified for go-tunnel by Sudhi Herle <sudhi@herle.net>
+
+### BEGIN INIT INFO
+# Provides:          gotun
+# Required-Start:    $network $local_fs $syslog
+# Required-Stop:     $network $local_fs $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: gotun: Robust TLS Tunneler
+### END INIT INFO
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/bin/gotun
+NAME=gotun
+DESC="gotun TLS server"
+CONF="/etc/gotun/gotun.conf"
+DEF="/etc/default/gotun"
+
+# XXX Change uid/gid to some benign value
+UID=nobody
+GID=nogroup
+
+test -x $DAEMON || exit 0
+test -f $CONF   || exit 0
+
+if [ -f "$DEF" ]; then
+    . $DEF
+fi
+
+if [ "$ENABLED" = "0" ]; then
+    echo "$DESC disabled; see $DEF"
+    exit 0
+fi
+
+set -e
+
+OPTIONS="$CONF"
+case "$1" in
+  start)
+    echo -n "Starting $DESC: $NAME"
+    start-stop-daemon --start --quiet \
+        --chuid $UID:$GID --background \
+        --exec $DAEMON -- $OPTIONS
+    echo "."
+    ;;
+  stop)
+    echo -n "Stopping $DESC: $NAME"
+    start-stop-daemon --stop --quiet \
+        --chuid $UID:$GID \
+        --oknodo --exec $DAEMON -- $OPTIONS
+    echo "."
+    ;;
+  restart)
+    $0 stop
+    $0 start
+    ;;
+  reload)
+    #
+    #   If the daemon can reload its config files on the fly
+    #   for example by sending it SIGHUP, do it here.
+    #
+    #   If the daemon responds to changes in its config file
+    #   directly anyway, make this a do-nothing entry.
+    #
+    echo -n "Reloading $DESC configuration... "
+    $0 stop
+    $0 start
+    echo "done."
+        ;;
+  *)
+    N=/etc/init.d/$NAME
+    echo "Usage: $N {start|stop|restart|reload}" >&2
+    exit 1
+    ;;
+esac
+
+exit 0

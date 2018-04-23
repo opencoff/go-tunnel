@@ -1,0 +1,5 @@
+#
+# Default file for gotun
+#
+# Set this to 1 to run the tun daemon
+ENABLED=0

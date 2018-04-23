@@ -1,0 +1,29 @@
+#! /bin/sh
+
+# Build linux debian package
+
+[ -f $PWD/version ] && VER=$(cat $PWD/version)
+
+# Arch for which we want to build
+ARCH="amd64"
+
+
+die() {
+    echo "$0: $@" 1>&2
+    exit 1
+}
+
+#set -x
+
+mk=`which mk-deb.py`
+if [ "x$mk" = "x" ]; then
+    die "Can't find mk-deb.py"
+fi
+
+
+# We bui
+pwd=`pwd`
+for a in $ARCH; do
+    ./build -s -a linux-$a -V $VER  || exit 1
+    $mk $a $pwd/debian $VER $pwd    || exit 1
+done
