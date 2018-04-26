@@ -185,7 +185,7 @@ func validate(c *Conf) error {
 		case "v1":
 		default:
 			if len(c.ProxyProtocol) > 0 {
-				return fmt.Errorf("%s: no support for proxy-protocol %s", c.ProxyProtocol)
+				return fmt.Errorf("%s: no support for proxy-protocol %s", l.Addr, c.ProxyProtocol)
 			}
 		}
 		if t := c.Tls; t != nil {

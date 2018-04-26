@@ -44,3 +44,4 @@ tools/vagrant/redis-cluster-conf/7778/nodes.conf
 tools/vagrant/redis-cluster-conf/7779/nodes.conf
 *.aof
 *.rdb
+*.deb

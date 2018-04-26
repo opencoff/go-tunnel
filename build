@@ -13,7 +13,7 @@
 #
 # License: GPLv2
 #
-Progs="gotun"
+Progs="godnsd"
 
 # Relative path to protobuf sources
 # e.g. src/foo/a.proto
@@ -28,7 +28,6 @@ PWD=`pwd`
 Static=0
 Dryrun=0
 Prodver=0.1
-[ -f $PWD/version ] && Prodver=$(cat $PWD/version)
 
 hostos=$(go env GOHOSTOS)       || exit 1
 hostcpu=$(go env GOHOSTARCH)    || exit 1
@@ -107,6 +106,7 @@ Options:
     -a X, --arch=X      Cross compile for OS-CPU 'X' [$hostos-$hostcpu]
     -n, --dry-run       Dry-run, don't actually build anything [False]
     -t, --test          Run "go test" on modules named on the command line [False]
+    --vet               Run "go vet" on modules named on the command line [False]
     -x                  Run in debug/trace mode [False]
 EOF
 
@@ -144,7 +144,7 @@ for c in $cpulist; do
 done
 
 
-Runtests=0
+Tool=
 doinit=0
 args=
 
@@ -182,7 +182,11 @@ do
             Prodver=$ac_optarg
             ;;
         --test|-t)
-            Runtests=1
+            Tool=test
+            ;;
+
+        --vet)
+            Tool=vet
             ;;
 
         -V|--version)
@@ -321,23 +325,33 @@ date="main.Buildtime=`date -u '+%Y-%m-%dT%H:%M.%SZ'`"
 ldflags="-ldflags \"-X $repover -X $prodver -X $date $ldflags\""
 
 
-if [ $Runtests -gt 0 ]; then
-    set -- $args
-    $e go test "$@"
-else
-    set -- $args
-    if [ -z "$1" ]; then
-        all=$Progs
-    else
-        all="$@"
-    fi
+case $Tool in
+    test)
+        set -- $args
+        $e go test "$@"
+        ;;
 
-    echo "Building $rev, $cross $msg .."
+    vet)
+        set -- $args
+        $e go vet -x -v "$@"
+        ;;
 
-    for p in $all; do 
-        echo "   $Bindir/$p .."
-        $e eval go build -o $Bindir/$p $isuffix "$ldflags" $p || exit 1
-    done
-fi
+    *) # Default is to build programs
+        set -- $args
+        if [ -z "$1" ]; then
+            all=$Progs
+        else
+            all="$@"
+        fi
+
+        echo "Building $rev, $cross $msg .."
+
+        for p in $all; do 
+            echo "   $p .."
+            $e eval go build -o $Bindir/$p $isuffix "$ldflags" $p || exit 1
+        done
+        ;;
+
+esac
 
 # vim: ft=sh:expandtab:ts=4:sw=4:tw=84:
