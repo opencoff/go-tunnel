@@ -27,6 +27,8 @@ var RepoVersion string = "UNDEFINED"
 var Buildtime string = "UNDEFINED"
 var ProductVersion string = "UNDEFINED"
 
+var BufSize uint = 65536
+
 // Number of minutes of profile data to capture
 // XXX Where should this be set? Config file??
 const PROFILE_MINS = 30
@@ -46,6 +48,7 @@ func main() {
 
 	debugFlag := flag.BoolP("debug", "d", false, "Run in debug mode")
 	verFlag := flag.BoolP("version", "v", false, "Show version info and quit")
+	//flag.UintVarP(&BufSize, "io-bufsize", "B", 65536, "I/O Bufsize")
 
 	usage := fmt.Sprintf("%s [options] config-file", os.Args[0])
 

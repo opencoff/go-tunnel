@@ -182,6 +182,40 @@ The config file is a YAML v2 document. An example is below:
 ### Examples
 TBD
 
+### Performance Test
+Using iperf3 on two debian-linux (amd64) hosts connected via Gigabit Ethernet and `gotun` running on either end,
+the performance looks like so:
+
+```shell
+$ iperf3 -V  -c 127.0.0.1 -p 9000
+iperf 3.1.3
+Linux ungoliant 4.15.0-2-amd64 #1 SMP Debian 4.15.11-1 (2018-03-20) x86_64
+Time: Sat, 28 Apr 2018 21:18:46 GMT
+Connecting to host 127.0.0.1, port 9000
+      Cookie: ungoliant.1524950326.966562.77625193
+      TCP MSS: 21888 (default)
+[  4] local 127.0.0.1 port 35444 connected to 127.0.0.1 port 9000
+Starting Test: protocol: TCP, 1 streams, 131072 byte blocks, omitting 0 seconds, 10 second test
+[ ID] Interval           Transfer     Bandwidth       Retr  Cwnd
+[  4]   0.00-1.00   sec  54.5 MBytes   457 Mbits/sec    0   2.50 MBytes
+[  4]   1.00-2.00   sec  45.7 MBytes   383 Mbits/sec    0   2.50 MBytes
+[  4]   2.00-3.00   sec  46.2 MBytes   388 Mbits/sec    0   2.50 MBytes
+[  4]   3.00-4.00   sec  46.5 MBytes   390 Mbits/sec    0   2.50 MBytes
+[  4]   4.00-5.00   sec  46.6 MBytes   391 Mbits/sec    0   2.50 MBytes
+[  4]   5.00-6.00   sec  46.2 MBytes   388 Mbits/sec    0   2.50 MBytes
+[  4]   6.00-7.00   sec  47.0 MBytes   394 Mbits/sec    0   2.50 MBytes
+[  4]   7.00-8.00   sec  47.7 MBytes   400 Mbits/sec    0   2.50 MBytes
+[  4]   8.00-9.00   sec  47.5 MBytes   398 Mbits/sec    0   2.50 MBytes
+[  4]   9.00-10.00  sec  46.7 MBytes   392 Mbits/sec    0   2.50 MBytes
+- - - - - - - - - - - - - - - - - - - - - - - - -
+Test Complete. Summary Results:
+[ ID] Interval           Transfer     Bandwidth       Retr
+[  4]   0.00-10.00  sec   475 MBytes   398 Mbits/sec    0             sender
+[  4]   0.00-10.00  sec   464 MBytes   389 Mbits/sec                  receiver
+CPU Utilization: local/sender 1.8% (0.0%u/1.7%s), remote/receiver 9.0% (0.6%u/8.4%s)
+
+```
+
 ### Access Control Rules
 Go-tunnel implements a flexible ACL by combination of
 allow/deny rules. The rules are evaluated in the following order:

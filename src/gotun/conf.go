@@ -58,10 +58,10 @@ type Timeouts struct {
 
 // Connect info
 type ConnectConf struct {
-	Addr string `yaml:"address"`
-	Bind string
+	Addr          string `yaml:"address"`
+	Bind          string
 	ProxyProtocol string
-	Tls  *TlsClientConf `yaml:"tls"`
+	Tls           *TlsClientConf `yaml:"tls"`
 }
 
 // Tls Conf
@@ -143,7 +143,7 @@ func defaults(c *Conf) *Conf {
 			t.Connect = 5
 		}
 		if t.Read == 0 {
-			t.Read = 10
+			t.Read = 30
 		}
 
 		if t.Write == 0 {
@@ -262,8 +262,11 @@ func (c *Conf) Dump(w io.Writer) {
 			fmt.Fprintf(w, " using proxy-protocol %s", c.ProxyProtocol)
 		}
 		if t := c.Tls; t != nil {
-			fmt.Fprintf(w, " using tls cert %s, key %s, ca %s",
-				t.Cert, t.Key, t.Ca)
+			fmt.Fprintf(w, " using tls")
+			if len(t.Cert) > 0 {
+				fmt.Fprintf(w, " cert %s, key %s", t.Cert, t.Key)
+			}
+			fmt.Fprintf(w, " and ca-bundle %s", t.Ca)
 		}
 		fmt.Fprintf(w, "\n")
 	}

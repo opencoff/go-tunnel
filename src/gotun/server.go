@@ -109,7 +109,7 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 		cancel:      cancel,
 		activeConn:  make(map[string]*relay),
 		pool: &sync.Pool{
-			New: func() interface{} { return make([]byte, 65536) },
+			New: func() interface{} { return make([]byte, BufSize) },
 		},
 		dial: &net.Dialer{
 			Timeout:   time.Duration(lc.Timeout.Connect) * time.Second,
@@ -254,7 +254,6 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	default:
 	}
 
-
 	var wg sync.WaitGroup
 
 	b0 := p.getBuf()
@@ -271,15 +270,11 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		r0, w0 = p.cancellableCopy(conn, peer, ctx, b0)
-		conn.Close()
-		peer.Close()
 	}()
 
 	go func() {
 		defer wg.Done()
 		r1, w1 = p.cancellableCopy(peer, conn, ctx, b1)
-		conn.Close()
-		peer.Close()
 	}()
 
 	select {
@@ -288,6 +283,9 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 
 	case <-ch:
 	}
+
+	conn.Close()
+	peer.Close()
 
 	p.putBuf(b0)
 	p.putBuf(b1)
@@ -313,17 +311,18 @@ func (p *TCPServer) cancellableCopy(d, s net.Conn, ctx context.Context, buf []by
 		close(ch)
 	}()
 
-	for {
-		select {
-		case <-ch:
-			return
+	select {
+	case <-ch:
 
-		case <-ctx.Done():
-			// This forces both copy go-routines to end the for{} loops.
-			d.Close()
-			s.Close()
-		}
+	case <-ctx.Done():
+		// This forces both copy go-routines to end the for{} loops.
+		p.log.Debug("SHUTDOWN: Force closing %s and %s",
+			d.RemoteAddr().String(), s.LocalAddr().String())
+		d.Close()
+		s.Close()
 	}
+
+	return
 }
 
 // copy from 's' to 'd' using 'buf'
@@ -333,14 +332,19 @@ func (p *TCPServer) copyBuf(d, s net.Conn, buf []byte) (x, y int) {
 	for {
 		s.SetReadDeadline(time.Now().Add(rto))
 		nr, err := s.Read(buf)
-		if err != nil && err != io.EOF && err != context.Canceled && !isReset(err) {
-			return
+		if err != nil {
+			p.log.Debug("%s: nr %d, read err %s", s.LocalAddr().String(), nr, err)
+			if err != io.EOF && err != context.Canceled && !isReset(err) {
+				return
+			}
 		}
+
 		if nr > 0 {
-			s.SetWriteDeadline(time.Now().Add(wto))
+			d.SetWriteDeadline(time.Now().Add(wto))
 			x += nr
 			nw, err := d.Write(buf[:nr])
 			if err != nil {
+				p.log.Debug("%s: Write Err %s", d.RemoteAddr().String(), err)
 				return
 			}
 			if nw != nr {
@@ -416,10 +420,10 @@ func parseTLSServerConf(lc *ListenConf, log *L.Logger) *tls.Config {
 		MinVersion:             tls.VersionTLS12,
 		SessionTicketsDisabled: true,
 		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
 			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
 
@@ -501,6 +505,19 @@ func parseTLSClientConf(lc *ListenConf, log *L.Logger) *tls.Config {
 		ServerName:               t.Server,
 		PreferServerCipherSuites: true,
 		SessionTicketsDisabled:   true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+
+			// Best disabled, as they don't provide Forward Secrecy,
+			// but might be necessary for some clients
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
 		CurvePreferences: []tls.CurveID{
 			tls.CurveP256,
 			tls.X25519,
