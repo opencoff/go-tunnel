@@ -248,8 +248,8 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	case "v1":
 		a1 := r.lconn.RemoteAddr().(*net.TCPAddr)
 		a2 := r.lconn.LocalAddr().(*net.TCPAddr)
-		s := fmt.Sprintf("PROXY %s %s %d %d\r\n",
-			a1.IP.String(), a2.IP.String(), a1.Port, a2.Port)
+		s := fmt.Sprintf("PROXY TCP4 %s %d %s %d\r\n",
+			a1.IP.String(), a1.Port, a2.IP.String(), a2.Port)
 		peer.Write([]byte(s))
 	default:
 	}
