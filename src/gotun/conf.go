@@ -21,6 +21,8 @@ import (
 type Conf struct {
 	Logging  string        `yaml:"log"`
 	LogLevel string        `yaml:"loglevel"`
+	Uid      string        `yaml:"uid"`
+	Gid      string        `yaml:"gid"`
 	Listen   []*ListenConf `yaml:"listen"`
 }
 

@@ -113,7 +113,13 @@ func main() {
 	for _, ln := range cfg.Listen {
 		p := NewTCPServer(ln, log)
 		srv = append(srv, p)
-		p.Start()
+	}
+
+	// Drop privileges before starting each server
+	DropPrivilege(cfg.Uid, cfg.Gid)
+
+	for _, s := range srv {
+		s.Start()
 	}
 
 	// Setup signal handlers
