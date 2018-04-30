@@ -432,6 +432,10 @@ func parseTLSServerConf(lc *ListenConf, log *L.Logger) *tls.Config {
 			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
 			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
 		},
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP256,
+			tls.X25519,
+		},
 	}
 
 	if t.Sni {
