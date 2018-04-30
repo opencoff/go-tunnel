@@ -19,43 +19,43 @@ import (
 // DropPrivilege changes the uid/gid. It dies if it cannot.
 func DropPrivilege(uids, gids string) {
 
-	var ui *u.User
-	var gi *u.Group
-	var err error
-
-	ui, err = u.Lookup(uids)
-	if err != nil {
-		ui, err = u.LookupId(uids)
+	if len(gids) > 0 {
+		gi, err := u.LookupGroup(gids)
 		if err != nil {
-			die("can't find user '%s' to drop privilege: %s", uids, err)
+			gi, err = u.LookupGroupId(gids)
+			if err != nil {
+				die("can't find group '%s' to drop privilege: %s", gids, err)
+			}
+		}
+
+		gid, err := strconv.Atoi(gi.Gid)
+		if err != nil {
+			die("can't parse integer gid %s: %s", gi.Gid, err)
+		}
+
+		if err = syscall.Setgid(gid); err != nil {
+			die("can't change Gid to %d: %s", gid, err)
 		}
 	}
 
-	gi, err = u.LookupGroup(gids)
-	if err != nil {
-		gi, err = u.LookupGroupId(gids)
+
+	if len(uids) > 0 {
+		ui, err := u.Lookup(uids)
 		if err != nil {
-			die("can't find group '%s' to drop privilege: %s", gids, err)
+			ui, err = u.LookupId(uids)
+			if err != nil {
+				die("can't find user '%s' to drop privilege: %s", uids, err)
+			}
 		}
-	}
+		uid, err := strconv.Atoi(ui.Uid)
+		if err != nil {
+			die("can't parse integer uid %s: %s", ui.Uid, err)
+		}
 
 
-	uid, err := strconv.Atoi(ui.Uid)
-	if err != nil {
-		die("can't parse integer uid %s: %s", ui.Uid, err)
-	}
-
-	gid, err := strconv.Atoi(gi.Gid)
-	if err != nil {
-		die("can't parse integer gid %s: %s", gi.Gid, err)
-	}
-
-	if err = syscall.Setgid(gid); err != nil {
-		die("can't change Gid to %d: %s", gid, err)
-	}
-
-	if err = syscall.Setuid(uid); err != nil {
-		die("can't change Uid to %d: %s", uid, err)
+		if err = syscall.Setuid(uid); err != nil {
+			die("can't change Uid to %d: %s", uid, err)
+		}
 	}
 }
 
