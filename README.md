@@ -107,80 +107,74 @@ whatever is set in the config file.
 The config file is a YAML v2 document. An example is below:
 ```yaml
 
-	# Log file; can be one of:
-	#  - Absolute path
-	#  - SYSLOG
-	#  - STDOUT
-	#  - STDERR
-	log: STDOUT
-	#log: STDOUT
+# Log file; can be one of:
+#  - Absolute path
+#  - SYSLOG
+#  - STDOUT
+#  - STDERR
+log: STDOUT
+#log: STDOUT
 
-	# Logging level - "DEBUG", "INFO", "WARN", "ERROR"
-	loglevel: DEBUG
+# Logging level - "DEBUG", "INFO", "WARN", "ERROR"
+loglevel: DEBUG
 
-	# Listeners
-	listen:
-		# Listen plain text
-	    -   address: 127.0.0.1:9090
-		    allow: [127.0.0.1/8, 11.0.1.0/24, 11.0.2.0/24]
-            deny: []
+# Listeners
+listen:
+    # Listen plain text
+    -   address: 127.0.0.1:9090
+        allow: [127.0.0.1/8, 11.0.1.0/24, 11.0.2.0/24]
+        deny: []
 
-            timeout:
-                connect: 10
-                read: 10
-                write: 30
+        timeout:
+            connect: 10
+            read: 10
+            write: 30
 
-            # limit to N reqs/sec globally
-            ratelimit:
-                global: 2000
-                perhost: 30
+        # limit to N reqs/sec globally
+        ratelimit:
+            global: 2000
+            perhost: 30
 
-            # Connect via TLS
-            connect:
-                address: host.name:443
-                bind: my.ip.address
-                tls:
-                cert: /path/to/crt
-                key: /path/to/key
-                # path to CA bundle that can verify the server certificate.
-                # This can be a file or a directory.
-                ca: /path/to/ca.crt
-
-                # if address is a name, then servername is populated from it.
-                # else, if it is an IP address, it must be set below.
-                # Not setting it => no verification (InsecureSkipVerify = true)
-                # servername: a.example.com
-
-		# Listen using TLS with SNI
-	    -   address: 127.0.0.1:9443
-            allow: [127.0.0.1/8, 11.0.1.0/24, 11.0.2.0/24]
-            deny: []
-            timeout:
-                connect: 8
-                read: 9
-                write: 27
-
+        # Connect via TLS
+        connect:
+            address: host.name:443
+            bind: my.ip.address
             tls:
-                sni: true
-                certdir: /path/to/cert/dir
+            cert: /path/to/crt
+            key: /path/to/key
+            # path to CA bundle that can verify the server certificate.
+            # This can be a file or a directory.
+            ca: /path/to/ca.crt
 
-                # clientcert can be "required" or "optional" or "blank" or absent.
-                # if it is required/optional, then clientca must be set to the list of
-                # CAs that can verify a presented client cert.
-                clientcert: required
-                clientca: /path/to/clientca.crt
+            # if address is a name, then servername is populated from it.
+            # else, if it is an IP address, it must be set below.
+            # Not setting it => no verification (InsecureSkipVerify = true)
+            # servername: a.example.com
 
-            # plain connect but use proxy-protocol v1 when speaking
-            # downstream
-            connect:
-                address: 55.66.77.88:80
-                proxyprotocol: v1
+    # Listen using TLS with SNI
+    -   address: 127.0.0.1:9443
+        allow: [127.0.0.1/8, 11.0.1.0/24, 11.0.2.0/24]
+        deny: []
+        timeout:
+            connect: 8
+            read: 9
+            write: 27
 
-	    -   address: 127.0.0.1:465
-            deny: []
-            tls:
-                cert: /path/to/a.crt
-                key: /path/to/a.key
+        tls:
+            sni: true
+            certdir: /path/to/cert/dir
+
+            # clientcert can be "required" or "optional" or "blank" or absent.
+            # if it is required/optional, then clientca must be set to the list of
+            # CAs that can verify a presented client cert.
+            clientcert: required
+            clientca: /path/to/clientca.crt
+
+        # plain connect but use proxy-protocol v1 when speaking
+        # downstream
+        connect:
+            address: 55.66.77.88:80
+            proxyprotocol: v1
 
 ```
 
