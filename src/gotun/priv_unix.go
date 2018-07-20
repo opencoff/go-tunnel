@@ -19,6 +19,11 @@ import (
 // DropPrivilege changes the uid/gid. It dies if it cannot.
 func DropPrivilege(uids, gids string) {
 
+	if me := syscall.Getuid(); me != 0 {
+		warn("Not running as 'root'; can't change uid/gid")
+		return
+	}
+
 	if len(gids) > 0 {
 		gi, err := u.LookupGroup(gids)
 		if err != nil {
