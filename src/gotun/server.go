@@ -186,26 +186,28 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		lconn: conn,
 		lhs:   fmt.Sprintf("%s-%s", lhs, conn.LocalAddr().String()),
 	}
-	p.mu.Lock()
-	p.activeConn[lhs] = r
-	p.mu.Unlock()
+
+	p.newConn(lhs, r)
 
 	defer func() {
 		p.wg.Done()
+		conn.Close()
 
-		p.mu.Lock()
-		delete(p.activeConn, lhs)
-		p.mu.Unlock()
+		p.delConn(lhs)
 	}()
 
 	peer, err := p.dial.DialContext(ctx, "tcp4", p.Connect.Addr)
 	if err != nil {
 		p.log.Warn("can't connect to %s: %s", p.Connect.Addr, err)
-		conn.Close()
 		return
 	}
 
 	r.rconn = peer
+
+	defer func() {
+		peer.Close()
+	}()
+
 
 	// we grab the printable info before the socket is closed
 	rhs_theirs := peer.RemoteAddr().String()
@@ -217,8 +219,6 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		err := econn.Handshake()
 		if err != nil {
 			p.log.Warn("can't establish TLS with %s: %s", lhs, err)
-			conn.Close()
-			peer.Close()
 			return
 		}
 
@@ -233,8 +233,6 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		err := econn.Handshake()
 		if err != nil {
 			p.log.Warn("can't establish TLS with %s: %s", rhs_theirs, err)
-			conn.Close()
-			peer.Close()
 			return
 		}
 		st := econn.ConnectionState()
@@ -284,13 +282,28 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 	case <-ch:
 	}
 
-	conn.Close()
-	peer.Close()
-
 	p.putBuf(b0)
 	p.putBuf(b1)
 
 	p.log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", lhs, r1, w0, rhs_theirs, r0, w1)
+}
+
+// instrumentation hook when a new connection is accepted from a client
+func (p *TCPServer) newConn(lhs string, r *relay) {
+	p.mu.Lock()
+	p.activeConn[lhs] = r
+	p.mu.Unlock()
+
+	// XXX stats
+}
+
+// instrumentation when a client or downstream connection is torn down.
+func (p *TCPServer) delConn(lhs string)  {
+	p.mu.Lock()
+	delete(p.activeConn, lhs)
+	p.mu.Unlock()
+
+	// XXX stats
 }
 
 func (p *TCPServer) getBuf() []byte {
