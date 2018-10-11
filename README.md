@@ -19,6 +19,11 @@ go-tunnel uses golang's TLS stack and built-in certification verification.
 - Access Control on per IP or subnet basis (allow/deny combination)
 - Strong ciphers and curves preferred on both client & server
 
+Note that TLS private keys need to be *unencrypted*; we don't support password protected
+private keys yet. The main reason for this is that when `gotun` is daemonized, it may not be
+possible to obtain the password in an interactive manner. Additionally, for SNI support, it may be
+impossible to ask for interactive password in the middle of a client connection setup.
+
 ### Motivating Example
 Let us suppose that you have a SOCKS5 server on host `192.168.55.3` and this
 is accessible via a "gateway" node `172.16.55.3`. Furthermore, let us say that
@@ -104,7 +109,8 @@ In the absence of the `-d` flag, the default log level is INFO or
 whatever is set in the config file.
 
 ### Config File
-The config file is a YAML v2 document. An example is below:
+The config file is a YAML v2 document. A self-explanatory example is below:
+
 ```yaml
 
 # Log file; can be one of:
@@ -178,8 +184,14 @@ listen:
 
 ```
 
-### Examples
-TBD
+### Using SNI
+SNI is exposed via domain specific certs & keys in the `tls.certdir` config block. SNI is
+enabled by setting `tls.sni` config element to `true`; and each hostname that is requested via
+SNI needs a cert and key file with the file prefix of hostname. e.g., if the client is looking
+for hostname "blog.mydomain.com" via SNI, then `gotun` will look for `blog.mydomain.com.crt` and
+`blog.mydomain.com.key` in the directory identified by `tls.certdir`. The config file above has
+an example for SNI configured on listen address `127.0.0.1:9443`.
+
 
 ### Performance Test
 Using iperf3 on two debian-linux (amd64) hosts connected via Gigabit Ethernet and `gotun` running on either end,
