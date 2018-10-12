@@ -1,17 +1,20 @@
-// cert.go -- load certs and keys
+// cert.go -- load certs and keys; this is largely a copy of crypto/tls.go
 //
-// Author: Sudhi Herle <sudhi@herle.net>
+// Copyright 2009 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 //
-// This software does not come with any express or implied
-// warranty; it is provided "as is". No claim  is made to its
-// suitability for any purpose.
+// Changes made by Sudhi Herle:
+//   * add password support for loading private keys
 //
-// Note:
-// ====
-// There is no easy way to load a cert + encrypted key in go.
-// This file attempts to remedy that.
+// Notes:
+// ======
+// * There is no easy way to load a cert + encrypted key in go.
+//   This file attempts to remedy that.
 //
-// It has no dependency on the method of entering the password.
+// * It has no dependency on the method of entering the password.
+//
+// * Only this file is licensed under different terms as above.
 
 package main
 
