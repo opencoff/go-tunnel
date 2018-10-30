@@ -32,6 +32,8 @@ Prodver=0.1
 hostos=$(go env GOHOSTOS)       || exit 1
 hostcpu=$(go env GOHOSTARCH)    || exit 1
 
+[ -f ./version ] && Prodver=$(cat ./version)
+
 die() {
     echo "$Z: $@" 1>&2
     exit 0
@@ -98,6 +100,8 @@ Where OS-ARCH denotes one of the valid OS, ARCH combinations supported by 'go'.
 And, PROGS is one or more go programs.
 
 With no arguments, $0 builds: $Progs (source in ./src/)
+
+If ./version is present, its content are used as version number for the binary.
 
 Options:
     -h, --help          Show this help message and quit
