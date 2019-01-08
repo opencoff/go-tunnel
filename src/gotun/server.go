@@ -52,8 +52,8 @@ type TCPServer struct {
 
 	wg sync.WaitGroup
 
-	grl *ratelimit.Ratelimiter
-	prl *ratelimit.PerIPRatelimiter
+	grl *ratelimit.RateLimiter
+	prl *ratelimit.PerIPRateLimiter
 
 	log *L.Logger
 }
@@ -92,7 +92,7 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 		die("%s: Can't create global ratelimiter: %s", addr, err)
 	}
 
-	pl, err := ratelimit.NewPerIPRatelimiter(lc.Ratelimit.PerHost, 1)
+	pl, err := ratelimit.NewPerIP(lc.Ratelimit.PerHost, 1, 10000)
 	if err != nil {
 		die("%s: Can't create per-host ratelimiter: %s", addr, err)
 	}
