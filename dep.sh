@@ -31,7 +31,7 @@ die() {
 }
 
 case $BASH_VERSION in
-    4.*.*) ;;
+    4.*|5.*) ;;
 
     *) die "I need bash 4.x to run!"
         ;;
