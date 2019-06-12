@@ -1,8 +1,10 @@
 
 all: bin
 
-bin: deps
+.PHONY: bin clean realclean
+
+bin:
 	./build -s
 
-deps:
-	./dep.sh sync
+clean realclean:
+	-rm -rf bin

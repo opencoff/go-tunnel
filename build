@@ -269,9 +269,6 @@ else
     fi
 fi
 
-# Sane GOPATH
-export GOPATH=$PWD/vendor:$PWD
-
 # This is where build outputs go
 Bindir=$PWD/bin/$cross
 Hostbindir=$PWD/bin/$hostos-$hostcpu
@@ -352,10 +349,11 @@ case $Tool in
 
         for p in $all; do 
             echo "   $p .."
-            $e eval go build -o $Bindir/$p $isuffix "$ldflags" $p || exit 1
+            (cd gotun
+            $e eval go build -o $Bindir/$p $isuffix "$ldflags"
+            ) || exit 1
         done
         ;;
-
 esac
 
 # vim: ft=sh:expandtab:ts=4:sw=4:tw=84:
