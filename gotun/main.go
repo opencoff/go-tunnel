@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/ogier/pflag"
+	flag "github.com/opencoff/pflag"
 
 	L "github.com/opencoff/go-logger"
 )
@@ -27,6 +27,7 @@ var RepoVersion string = "UNDEFINED"
 var Buildtime string = "UNDEFINED"
 var ProductVersion string = "UNDEFINED"
 
+// Network I/O buffer size
 var BufSize uint = 65536
 
 // Number of minutes of profile data to capture
@@ -48,12 +49,12 @@ func main() {
 
 	debugFlag := flag.BoolP("debug", "d", false, "Run in debug mode")
 	verFlag := flag.BoolP("version", "v", false, "Show version info and quit")
-	//flag.UintVarP(&BufSize, "io-bufsize", "B", 65536, "I/O Bufsize")
+	flag.UintVarP(&BufSize, "io-bufsize", "B", BufSize, "Set network I/O buffer size to `b` bytes")
 
 	usage := fmt.Sprintf("%s [options] config-file", os.Args[0])
 
 	flag.Usage = func() {
-		fmt.Printf("gotun - TLS Tunneler\nUsage: %s\n", usage)
+		fmt.Printf("gotun - TLS Server/Proxy\nUsage: %s\n", usage)
 		flag.PrintDefaults()
 	}
 
