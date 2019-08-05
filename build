@@ -28,6 +28,7 @@ PWD=`pwd`
 Static=0
 Dryrun=0
 Prodver=0.1
+Verbose=0
 
 hostos=$(go env GOHOSTOS)       || exit 1
 hostcpu=$(go env GOHOSTARCH)    || exit 1
@@ -110,6 +111,7 @@ Options:
     -a X, --arch=X      Cross compile for OS-CPU 'X' [$hostos-$hostcpu]
     -n, --dry-run       Dry-run, don't actually build anything [False]
     -t, --test          Run "go test" on modules named on the command line [False]
+    -v, --verbose       Build verbosely (adds "-v" to go tooling) [False]
     --vet               Run "go vet" on modules named on the command line [False]
     -x                  Run in debug/trace mode [False]
 EOF
@@ -195,6 +197,9 @@ do
 
         -V|--version)
             ac_prev=Prodver
+            ;;
+        -v|--verbose)
+            Verbose=1
             ;;
 
         -s|--static)
@@ -324,17 +329,19 @@ repover="main.RepoVersion=$rev"
 prodver="main.ProductVersion=$Prodver"
 date="main.Buildtime=`date -u '+%Y-%m-%dT%H:%M.%SZ'`"
 ldflags="-ldflags \"-X $repover -X $prodver -X $date $ldflags\""
+vflag=""
 
+[ $Verbose -gt 0 ] && vflag="-v"
 
 case $Tool in
     test)
         set -- $args
-        $e go test "$@"
+        $e go test $vflag "$@"
         ;;
 
     vet)
         set -- $args
-        $e go vet -x -v "$@"
+        $e go vet $vflag "$@"
         ;;
 
     *) # Default is to build programs
@@ -348,10 +355,15 @@ case $Tool in
         echo "Building $rev, $cross $msg .."
 
         for p in $all; do 
-            echo "   $p .."
-            (cd gotun
-            $e eval go build -o $Bindir/$p $isuffix "$ldflags"
-            ) || exit 1
+            if echo $p | grep -q ':' ; then
+                out=${p##*:}
+                dir=${p%%:*}
+            else
+                out=$p
+                dir=$p
+            fi
+            echo "   $dir: $out .. "
+            $e eval go build $vflag -o $Bindir/$out $isuffix "$ldflags" ./$dir || exit 1
         done
         ;;
 esac

@@ -2,10 +2,14 @@ github.com/opencoff/go-logger v0.0.0-20190612060632-bf4528b7367d h1:kBo3CACJRG/T
 github.com/opencoff/go-logger v0.0.0-20190612060632-bf4528b7367d/go.mod h1:0uZokzKt+uCJkbz12vSoChasSJoLc2aNuCS0A/U7Dqs=
 github.com/opencoff/go-ratelimit v0.0.0-20190606150156-0f70d7ed4af0 h1:JwemVLCO/E9v2kCTt/86Oa/KxgQHWfJ5nWVmQ5UgCLc=
 github.com/opencoff/go-ratelimit v0.0.0-20190606150156-0f70d7ed4af0/go.mod h1:MlK6FlcsSUqs9xz3r3ZVa7E02OgYpYB7U6JAMNx1ZXg=
+github.com/opencoff/go-ratelimit v0.6.0 h1:u+OUXaHtwJ3J9Yd+hGyU+JSafaoPBXvXrlEbWuHl8RQ=
+github.com/opencoff/go-ratelimit v0.6.0/go.mod h1:MlK6FlcsSUqs9xz3r3ZVa7E02OgYpYB7U6JAMNx1ZXg=
 github.com/opencoff/golang-lru v0.6.0 h1:e5jyAHA4AJbohh8mmPB6JpTvZMVrnh3z5GFAqTADVm8=
 github.com/opencoff/golang-lru v0.6.0/go.mod h1:Ll98eBFICVmenoj+uJfH+ReFgDMD+nuK9VshgMwDs80=
 github.com/opencoff/pflag v0.2.0 h1:bSI5Qz5W15aCs+4YRDYX6LK5qaUD9GpjZKYP4fli/EY=
 github.com/opencoff/pflag v0.2.0/go.mod h1:mTLzGGUGda1Av3d34iAJlh0JIlRxmFZtmc6qoWPspK0=
+github.com/opencoff/pflag v0.3.3 h1:yohZkwYGPkB34WXvUQzU5GyLhImnjfePDARUaE8me3U=
+github.com/opencoff/pflag v0.3.3/go.mod h1:mTLzGGUGda1Av3d34iAJlh0JIlRxmFZtmc6qoWPspK0=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
 gopkg.in/yaml.v2 v2.2.2 h1:ZCJp+EgiOT7lHqUV2J862kp8Qj64Jo6az82+3Td9dZw=
 gopkg.in/yaml.v2 v2.2.2/go.mod h1:hI93XBmqTisBFMUTm0b8Fm+jr3Dg1NNxqwp+5A1VGuI=
