@@ -126,8 +126,7 @@ func main() {
 	// Setup signal handlers
 	sigchan := make(chan os.Signal, 4)
 	signal.Notify(sigchan,
-		syscall.SIGTERM, syscall.SIGKILL,
-		syscall.SIGINT, syscall.SIGHUP)
+		syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 
 	signal.Ignore(syscall.SIGPIPE, syscall.SIGFPE)
 

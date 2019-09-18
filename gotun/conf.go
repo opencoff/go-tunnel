@@ -113,13 +113,13 @@ func (ipn *subnet) UnmarshalYAML(unm func(v interface{}) error) error {
 func ReadYAML(fn string) (*Conf, error) {
 	yml, err := ioutil.ReadFile(fn)
 	if err != nil {
-		return nil, fmt.Errorf("Can't read config file %s: %s", fn, err)
+		return nil, fmt.Errorf("can't read config file %s: %s", fn, err)
 	}
 
 	var cfg Conf
 	err = yaml.Unmarshal(yml, &cfg)
 	if err != nil {
-		return nil, fmt.Errorf("Can't parse config file %s: %s", fn, err)
+		return nil, fmt.Errorf("can't parse config file %s: %s", fn, err)
 	}
 
 	if err = validate(&cfg); err != nil {
