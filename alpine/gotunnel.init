@@ -1,0 +1,24 @@
+#!/sbin/openrc-run
+
+# alpine startup for gotun
+# Sudhi Herle Aug 2019
+
+name=$RC_SVCNAME
+description="TLS/SSL Tunnel"
+commane="/usr/bin/gotun"
+confdir="/etc/gotun"
+conf="$confdir/gotun.conf"
+command_background="true"
+command_args="$conf"
+command_user="nobody:nogroup"
+pidfile="/run/$name.pid"
+
+required_dirs="$confdir"
+required_files="$command $conf"
+
+
+depend() {
+    need net logger dns
+    #use logger dns
+    after bootmisc
+}
