@@ -110,6 +110,10 @@ func main() {
 		die("%s: no listeners in config file", cfgfile)
 	}
 
+	if *debugFlag {
+		cfg.Dump(os.Stdout)
+	}
+
 	var srv []Proxy
 	for _, ln := range cfg.Listen {
 		p := NewTCPServer(ln, log)

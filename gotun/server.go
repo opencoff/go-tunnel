@@ -576,7 +576,7 @@ func ReadCA(nm string, log *L.Logger) (*x509.CertPool, error) {
 		if len(filei) > 0 {
 			files = make([]string, len(filei))
 			for i, fi := range filei {
-				files[i] = fi.Name()
+				files[i] = path.Join(nm, fi.Name())
 			}
 		}
 		log.Debug("Found %d files in CA dir %s", len(files), nm)
