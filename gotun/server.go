@@ -346,8 +346,8 @@ func (p *TCPServer) copyBuf(d, s net.Conn, buf []byte) (x, y int) {
 		s.SetReadDeadline(time.Now().Add(rto))
 		nr, err := s.Read(buf)
 		if err != nil {
-			p.log.Debug("%s: nr %d, read err %s", s.LocalAddr().String(), nr, err)
 			if err != io.EOF && err != context.Canceled && !isReset(err) {
+				p.log.Debug("%s: nr %d, read err %s", s.LocalAddr().String(), nr, err)
 				return
 			}
 		}
