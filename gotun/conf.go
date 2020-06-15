@@ -42,8 +42,8 @@ type ListenConf struct {
 }
 
 type RateLimit struct {
-	Global  uint `yaml:"global"`
-	PerHost uint `yaml:"perhost"`
+	Global  int `yaml:"global"`
+	PerHost int `yaml:"perhost"`
 }
 
 // An IP/Subnet
@@ -134,10 +134,10 @@ func defaults(c *Conf) *Conf {
 		if l.Ratelimit == nil {
 			l.Ratelimit = &RateLimit{}
 		}
-		if l.Ratelimit.Global == 0 {
+		if l.Ratelimit.Global <= 0 {
 			l.Ratelimit.Global = 1000
 		}
-		if l.Ratelimit.PerHost == 0 {
+		if l.Ratelimit.PerHost <= 0 {
 			l.Ratelimit.PerHost = 10
 		}
 		t := &l.Timeout

@@ -15,7 +15,6 @@ import (
 	"syscall"
 )
 
-
 // DropPrivilege changes the uid/gid. It dies if it cannot.
 func DropPrivilege(uids, gids string) {
 
@@ -43,7 +42,6 @@ func DropPrivilege(uids, gids string) {
 		}
 	}
 
-
 	if len(uids) > 0 {
 		ui, err := u.Lookup(uids)
 		if err != nil {
@@ -57,11 +55,8 @@ func DropPrivilege(uids, gids string) {
 			die("can't parse integer uid %s: %s", ui.Uid, err)
 		}
 
-
 		if err = syscall.Setuid(uid); err != nil {
 			die("can't change Uid to %d: %s", uid, err)
 		}
 	}
 }
-
-

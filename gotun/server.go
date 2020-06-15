@@ -52,8 +52,7 @@ type TCPServer struct {
 
 	wg sync.WaitGroup
 
-	grl *ratelimit.RateLimiter
-	prl *ratelimit.PerIPRateLimiter
+	rl *ratelimit.RateLimiter
 
 	log *L.Logger
 }
@@ -87,14 +86,9 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 	log = log.New(ln.Addr().String(), 0)
 
 	// Conf file specifies ratelimit as N conns/sec
-	rl, err := ratelimit.New(lc.Ratelimit.Global, 1)
+	rl, err := ratelimit.New(lc.Ratelimit.Global, lc.Ratelimit.PerHost, 10000)
 	if err != nil {
-		die("%s: Can't create global ratelimiter: %s", addr, err)
-	}
-
-	pl, err := ratelimit.NewPerIP(lc.Ratelimit.PerHost, 1, 10000)
-	if err != nil {
-		die("%s: Can't create per-host ratelimiter: %s", addr, err)
+		die("%s: Can't create ratelimiter: %s", addr, err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -116,8 +110,7 @@ func NewTCPServer(lc *ListenConf, log *L.Logger) Proxy {
 			LocalAddr: resolveAddr(lc.Connect.Bind),
 			KeepAlive: 25 * time.Second,
 		},
-		grl: rl,
-		prl: pl,
+		rl: rl,
 	}
 
 	return p
@@ -208,7 +201,6 @@ func (p *TCPServer) handleConn(conn net.Conn, ctx context.Context) {
 		peer.Close()
 	}()
 
-
 	// we grab the printable info before the socket is closed
 	rhs_theirs := peer.RemoteAddr().String()
 	r.rhs = fmt.Sprintf("%s-%s", peer.LocalAddr().String(), rhs_theirs)
@@ -298,7 +290,7 @@ func (p *TCPServer) newConn(lhs string, r *relay) {
 }
 
 // instrumentation when a client or downstream connection is torn down.
-func (p *TCPServer) delConn(lhs string)  {
+func (p *TCPServer) delConn(lhs string) {
 	p.mu.Lock()
 	delete(p.activeConn, lhs)
 	p.mu.Unlock()
@@ -399,14 +391,14 @@ func (p *TCPServer) Accept() (net.Conn, error) {
 		}
 
 		// First enforce a global ratelimit
-		if p.grl.Limit() {
+		if !p.rl.Allow() {
 			p.log.Debug("global ratelimit reached: %s", nc.RemoteAddr().String())
 			nc.Close()
 			continue
 		}
 
 		// Then a per-host ratelimit
-		if p.prl.Limit(nc.RemoteAddr()) {
+		if !p.rl.AllowHost(nc.RemoteAddr()) {
 			p.log.Debug("per-host ratelimit reached: %s", nc.RemoteAddr().String())
 			nc.Close()
 			continue
