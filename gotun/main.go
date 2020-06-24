@@ -54,7 +54,7 @@ func main() {
 	usage := fmt.Sprintf("%s [options] config-file", os.Args[0])
 
 	flag.Usage = func() {
-		fmt.Printf("gotun - TLS Server/Proxy\nUsage: %s\n", usage)
+		fmt.Printf("gotun - TCP/TLS and Quic Server/Proxy\nUsage: %s\n", usage)
 		flag.PrintDefaults()
 	}
 
@@ -116,7 +116,7 @@ func main() {
 
 	var srv []Proxy
 	for _, ln := range cfg.Listen {
-		p := NewTCPServer(ln, log)
+		p := NewServer(ln, cfg, log)
 		srv = append(srv, p)
 	}
 

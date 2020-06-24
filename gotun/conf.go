@@ -9,11 +9,14 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	yaml "gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"net"
+	"path"
 	"strings"
 )
 
@@ -23,6 +26,7 @@ type Conf struct {
 	LogLevel string        `yaml:"loglevel"`
 	Uid      string        `yaml:"uid"`
 	Gid      string        `yaml:"gid"`
+	ConfDir  string        `yaml: config-dir"`
 	Listen   []*ListenConf `yaml:"listen"`
 }
 
@@ -32,6 +36,7 @@ type ListenConf struct {
 	Deny    []subnet `yaml:"deny"`
 	Timeout Timeouts `yaml:"timeout"`
 
+	Quic bool `yaml:"quic"`
 	// optional TLS info; will listen on TLS socket if provided
 	Tls *TlsServerConf `yaml:"tls"`
 
@@ -39,6 +44,10 @@ type ListenConf struct {
 	Ratelimit *RateLimit `yaml:"ratelimit"`
 
 	Connect ConnectConf `yaml:"connect"`
+
+	// parsed Server & client configs
+	serverCfg *tls.Config
+	clientCfg *tls.Config
 }
 
 type RateLimit struct {
@@ -63,13 +72,14 @@ type ConnectConf struct {
 	Addr          string `yaml:"address"`
 	Bind          string
 	ProxyProtocol string
+	Quic          bool           `yaml:"quic"`
 	Tls           *TlsClientConf `yaml:"tls"`
 }
 
 // Tls Conf
 type TlsServerConf struct {
-	Sni        bool
-	Certdir    string
+	Quic       bool
+	Sni        string
 	Cert       string
 	Key        string
 	ClientCert string
@@ -81,6 +91,8 @@ type TlsServerConf struct {
 
 // Tls client conf
 type TlsClientConf struct {
+	Quic bool
+
 	// This can be a file or a dir. This is for verifying the
 	// server provided certificate.
 	Ca   string
@@ -88,25 +100,8 @@ type TlsClientConf struct {
 	Key  string
 
 	Server string `yaml:"servername"`
-}
 
-// Custom unmarshaler for IPNet
-func (ipn *subnet) UnmarshalYAML(unm func(v interface{}) error) error {
-	var s string
-
-	// First unpack the bytes as a string. We then parse the string
-	// as a CIDR
-	err := unm(&s)
-	if err != nil {
-		return err
-	}
-
-	_, net, err := net.ParseCIDR(s)
-	if err == nil {
-		ipn.IP = net.IP
-		ipn.Mask = net.Mask
-	}
-	return err
+	tlsCfg *tls.Config
 }
 
 // Parse config file in YAML format and return
@@ -166,8 +161,8 @@ func defaults(c *Conf) *Conf {
 }
 
 // basic sanity check on the parsed config file
-func validate(c *Conf) error {
-	for _, l := range c.Listen {
+func validate(conf *Conf) error {
+	for _, l := range conf.Listen {
 		c := &l.Connect
 		if len(c.Addr) == 0 {
 			return fmt.Errorf("listener %s has missing connect info", l.Addr)
@@ -204,8 +199,9 @@ func validate(c *Conf) error {
 		}
 
 		if t := l.Tls; t != nil {
-			if t.Sni {
-				if len(t.Certdir) == 0 {
+			if len(t.Sni) > 0 {
+				dir := conf.Path(t.Sni)
+				if !isdir(dir) {
 					return fmt.Errorf("%s: TLS SNI requires a certificate dir", l.Addr)
 				}
 			} else {
@@ -231,9 +227,207 @@ func validate(c *Conf) error {
 
 				t.ClientCert = auth
 			}
+			l.serverCfg = l.ParseTlsServerConf(conf)
+		}
+
+		if t := c.Tls; t != nil {
+			l.clientCfg = l.ParseTlsClientConf(conf)
 		}
 	}
 	return nil
+}
+
+func (lc *ListenConf) IsQuic() bool {
+	return lc.Tls != nil && lc.Quic
+}
+
+func (tc *ConnectConf) IsQuic() bool {
+	return tc.Tls != nil && tc.Quic
+}
+
+// parse TLS server config
+func (lc *ListenConf) ParseTlsServerConf(c *Conf) *tls.Config {
+	t := lc.Tls
+	cfg := &tls.Config{
+		MinVersion:             tls.VersionTLS12,
+		SessionTicketsDisabled: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+
+			// Best disabled, as they don't provide Forward Secrecy,
+			// but might be necessary for some clients
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP256,
+			tls.X25519,
+		},
+	}
+
+	// We handle SNI later when we setup the server instance.
+	if len(t.Sni) == 0 {
+		crt := c.Path(t.Cert)
+		key := c.Path(t.Key)
+
+		if err := c.IsFileSafe(crt); err != nil {
+			die("insecure perms on %s! ..", crt)
+		}
+
+		if err := c.IsFileSafe(key); err != nil {
+			die("insecure perms on %s ..", key)
+		}
+
+		cert, err := tls.LoadX509KeyPair(crt, key)
+		if err != nil {
+			die("%s: can't load server cert {%s, %s}: %s", lc.Addr, t.Cert, t.Key, err)
+		}
+
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+
+	needCA := true
+	switch t.ClientCert {
+	case "required":
+		cfg.ClientAuth = tls.RequireAndVerifyClientCert
+
+	case "optional":
+		cfg.ClientAuth = tls.VerifyClientCertIfGiven
+		// XXX We may have to write a VerifyPeerCertificate() callback to verify
+
+	default:
+		needCA = false
+		cfg.ClientAuth = tls.NoClientCert
+	}
+
+	if needCA {
+		cfg.ClientCAs = c.ReadCA(t.ClientCA)
+	}
+
+	return cfg
+}
+
+func (lc *ListenConf) ParseTlsClientConf(c *Conf) *tls.Config {
+	t := lc.Connect.Tls
+	cfg := &tls.Config{
+		ServerName:               t.Server,
+		PreferServerCipherSuites: true,
+		SessionTicketsDisabled:   true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+
+			// Best disabled, as they don't provide Forward Secrecy,
+			// but might be necessary for some clients
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP256,
+			tls.X25519,
+		},
+	}
+
+	var err error
+
+	cfg.RootCAs = c.ReadCA(t.Ca)
+	if err != nil {
+		die("%s: can't load TLS client CA from %s: %s", lc.Addr, t.Ca, err)
+	}
+
+	crt := c.Path(t.Cert)
+	key := c.Path(t.Key)
+
+	if err := c.IsFileSafe(crt); err != nil {
+		die("insecure perms on %s! ..", crt)
+	}
+
+	if err := c.IsFileSafe(key); err != nil {
+		die("insecure perms on %s ..", key)
+	}
+
+	cert, err := tls.LoadX509KeyPair(crt, key)
+	if err != nil {
+		die("%s: can't load TLS client cert/key {%s, %s}: %s", lc.Addr, crt, key, err)
+	}
+
+	cfg.Certificates = []tls.Certificate{cert}
+	if len(cfg.ServerName) == 0 {
+		warn("TLS Client towards %s has no server-name; UNABLE TO VERIFY server presented cert", lc.Connect.Addr)
+		cfg.InsecureSkipVerify = true
+	}
+
+	return cfg
+}
+
+func (c *Conf) ReadCA(nm string) *x509.CertPool {
+	nm = c.Path(nm)
+	fdv, err := c.SafeOpen(nm)
+	if err != nil {
+		die("can't read %s: %s", nm, err)
+	}
+
+	p := x509.NewCertPool()
+	for i := range fdv {
+		fd := fdv[i]
+		fn := fd.Name()
+		if !strings.HasSuffix(fn, ".pem") {
+			fd.Close()
+			continue
+		}
+
+		pem, err := ioutil.ReadAll(fd)
+		if err != nil {
+			fd.Close()
+			die("can't read %s: %s", fn, err)
+		}
+
+		p.AppendCertsFromPEM(pem)
+		fd.Close()
+	}
+
+	n := len(p.Subjects())
+	if n == 0 {
+		die("%s: No CA Certs!", nm)
+	}
+
+	return p
+}
+
+// Custom unmarshaler for IPNet
+func (ipn *subnet) UnmarshalYAML(unm func(v interface{}) error) error {
+	var s string
+
+	// First unpack the bytes as a string. We then parse the string
+	// as a CIDR
+	err := unm(&s)
+	if err != nil {
+		return err
+	}
+
+	_, net, err := net.ParseCIDR(s)
+	if err == nil {
+		ipn.IP = net.IP
+		ipn.Mask = net.Mask
+	}
+	return err
+}
+
+// turn relative paths to absolute
+func (c *Conf) Path(nm string) string {
+	if path.IsAbs(nm) {
+		return nm
+	}
+	return path.Join(c.ConfDir, nm)
 }
 
 // Print config in human readable format
@@ -243,8 +437,8 @@ func (c *Conf) Dump(w io.Writer) {
 	for _, l := range c.Listen {
 		fmt.Fprintf(w, "listen on %s", l.Addr)
 		if t := l.Tls; t != nil {
-			if t.Sni {
-				fmt.Fprintf(w, " with tls sni using certstore %s", t.Certdir)
+			if len(t.Sni) > 0 {
+				fmt.Fprintf(w, " with tls sni using certstore %s", t.Sni)
 			} else {
 				fmt.Fprintf(w, " with tls using cert %s, key %s",
 					t.Cert, t.Key)
