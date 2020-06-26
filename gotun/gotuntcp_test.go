@@ -3,7 +3,7 @@
 package main
 
 import (
-	"fmt"
+	"net"
 	"testing"
 )
 
@@ -14,8 +14,6 @@ func testSetup() *Conf {
 	// We'll spin up a simple server on the connect endpoint
 
 	lc := &ListenConf{
-		Addr:    "127.0.0.1:9000",
-		Allow:   "0.0.0.0/32",
 		Connect: ConnectConf{
 				Addr: "127.0.0.1:9001",
 			},
@@ -29,59 +27,23 @@ func testSetup() *Conf {
 	return c
 }
 
-type mockServer struct {
-	net.Listener
-
-	done chan bool
-}
-
-func newMockServer(network, addr string) (*mockServer, error) {
-	ln, err := net.Listen(network, addr)
-	if err != nil {
-		return nil, err
-	}
-
-	return &mockServer{
-			Listener: ln,
-			done:	  make(chan bool),
-		}
-}
-
-func (m *mockServer) buildup(h func(net.Listener, *mockServer)) {
-	go func() {
-		h(m.Listener, m)
-		close(m.done)
-	}()
-}
-
-func (m *mockServer) stop() {
-	m.Close()
-	<- m.done
-}
-
-func startEndpointTCPServer(addr string, t *testing.T, ctx context.Context)  {
-	assert := newAsserter(t)
-	ln, err := net.Listen("tcp", addr)
-	assert(err == nil, "can't listen on %s: %s", addr, err)
-
-	go func() {
-
-		for {
-			conn, err := ln.Accept()
-			assert(err == nil, "can't accept on %s: %s", addr, err)
-
-			go relay(conn, t)
-		}
-
-	}
-}
-
 func TestTCPtoTCP(t *testing.T) {
 	assert := newAsserter(t)
 
+	pk, err := newPKI()
+	assert(err == nil, "can't create PKI: %s", err)
 
-	cfg := testSetup()
+	a := net.ParseIP("127.0.0.1")
+	assert(a != nil, "can't parse ip: %s", err)
 
-	m := newMockServer("tcp", cfg.Listen[0].Connect.Addr)
-	m.buildup(relay)
+	cert, key, err := pk.ServerCert("myserver.com", a)
+	assert(err == nil, "can't create server cert: %s", err)
+	assert(cert != nil, "server cert nil")
+	assert(key != nil, "server key nil")
+
+	cert, key, err = pk.ClientCert("client@foo.com")
+	assert(err == nil, "can't create client cert: %s", err)
+	assert(cert != nil, "client cert nil")
+	assert(key != nil, "client key nil")
+
 }
