@@ -34,6 +34,8 @@ func testSetup(lport, cport int) *Conf {
 	return defaults(c)
 }
 
+// Client -> gotun TCP
+// gotun -> backend TCP
 func TestTcpToTcp(t *testing.T) {
 	assert := newAsserter(t)
 
@@ -63,8 +65,11 @@ func TestTcpToTcp(t *testing.T) {
 	c.stop()
 	s.stop()
 	gt.Stop()
+	log.Close()
 }
 
+// Client -> gotun TLS
+// gotun -> backend TCP
 func TestTlsToTcp(t *testing.T) {
 	assert := newAsserter(t)
 
@@ -131,8 +136,11 @@ func TestTlsToTcp(t *testing.T) {
 	c.stop()
 	s.stop()
 	gt.Stop()
+	log.Close()
 }
 
+// Client -> gotun TLS with client auth
+// gotun -> backend TCP
 func TestClientTlsToTcp(t *testing.T) {
 	assert := newAsserter(t)
 
@@ -210,4 +218,84 @@ func TestClientTlsToTcp(t *testing.T) {
 	c.stop()
 	s.stop()
 	gt.Stop()
+	log.Close()
+}
+
+// Client -> gotun TLS with *bad* client auth
+// gotun -> backend TCP
+func TestClientBadTlsToTcp(t *testing.T) {
+	assert := newAsserter(t)
+
+	pki, err := newPKI()
+	assert(err == nil, "can't create PKI: %s", err)
+
+	pkic, err := newPKI()
+	assert(err == nil, "can't create client PKI: %s", err)
+
+	spool := x509.NewCertPool()
+	spool.AddCert(pki.ca)
+
+	cpool := x509.NewCertPool()
+	cpool.AddCert(pkic.ca)
+
+	cfg := testSetup(9010, 9011)
+	lc := cfg.Listen[0]
+
+	cert, err := pki.ServerCert("server.name", lc.Addr)
+	assert(err == nil, "can't create server cert: %s", err)
+
+	tlsCfg := &tls.Config{
+		MinVersion:             tls.VersionTLS13,
+		ServerName:             "server.name",
+		SessionTicketsDisabled: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+
+			// Best disabled, as they don't provide Forward Secrecy,
+			// but might be necessary for some clients
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		RootCAs:      spool,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    cpool,
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP256,
+			tls.X25519,
+		},
+	}
+
+	lc.serverCfg = tlsCfg
+
+	// client TLS config; we need the proper root
+	ctlsCfg := *tlsCfg
+
+	// This is a _bad_ client cert (different root)
+	ctlsCfg.Certificates = []tls.Certificate{cert}
+
+	// create a server on the other end of a connector
+	s := newTcpServer("tcp", lc.Connect.Addr, nil, t)
+	assert(s != nil, "server creation failed")
+
+	log := newLogger(t)
+	gt := NewServer(lc, cfg, log)
+	gt.Start()
+
+	// Now create a mock client to send data to mock server
+	c := newTcpClient("tcp", lc.Addr, &ctlsCfg, t)
+	assert(c != nil, "client creation failed")
+
+	c.start(10)
+	assert(c.nr == 0, "client read from closed conn %d bytes", c.nr)
+
+	c.stop()
+	s.stop()
+	gt.Stop()
+	log.Close()
 }

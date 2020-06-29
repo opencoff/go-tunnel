@@ -27,20 +27,6 @@ const (
 	IOSIZE int = 4096
 )
 
-var (
-	P *pki
-)
-
-// will this actually run before everything?
-func init() {
-	var err error
-	P, err = newPKI()
-
-	if err != nil {
-		panic(fmt.Sprintf("can't setup PKI: %s", err))
-	}
-}
-
 type tcpserver struct {
 	net.Listener
 	t *testing.T
@@ -200,20 +186,19 @@ func newTcpClient(network, addr string, tcfg *tls.Config, t *testing.T) *tcpclie
 	return c
 }
 
-func (c *tcpclient) start(n int) {
+func (c *tcpclient) start(n int) error {
 	var err error
-
-	assert := newAsserter(c.t)
-
 	dial := &net.Dialer{
 		Timeout: 1 * time.Second,
 	}
 
 	c.Conn, err = dial.DialContext(c.ctx, c.network, c.addr)
-	assert(err == nil, "can't dial %s: %s", c.addr, err)
+	if err != nil {
+		return err
+	}
 
 	c.t.Logf("mock tcp client: connected to %s\n", c.addr)
-	c.loop(n)
+	return c.loop(n)
 }
 
 func (c *tcpclient) stop() {
@@ -221,7 +206,7 @@ func (c *tcpclient) stop() {
 	c.Close()
 }
 
-func (c *tcpclient) loop(n int) {
+func (c *tcpclient) loop(n int) error {
 	assert := newAsserter(c.t)
 	done := c.ctx.Done()
 	addr := c.RemoteAddr().String()
@@ -236,8 +221,9 @@ func (c *tcpclient) loop(n int) {
 	if c.tls != nil {
 		econn := tls.Client(c, c.tls)
 		err := econn.Handshake()
-		assert(err == nil, "%s: can't setup TLS: %s", from, err)
-
+		if err != nil {
+			return err
+		}
 		fd = econn
 		c.t.Logf("mock tcp client: Upgraded %s to TLS\n", from)
 	}
@@ -252,7 +238,7 @@ func (c *tcpclient) loop(n int) {
 		nw, err := writefull(fd, buf)
 		select {
 		case <-done:
-			return
+			return nil
 		default:
 		}
 		assert(err == nil, "%s: write err: %s", from, err)
@@ -269,13 +255,13 @@ func (c *tcpclient) loop(n int) {
 		nr, err := readfull(fd, sumr[:])
 		select {
 		case <-done:
-			return
+			return nil
 		default:
 		}
 
 		if errors.Is(err, io.EOF) || nr == 0 {
 			c.t.Logf("%s: EOF? nr %d\n", from, nr)
-			return
+			return nil
 		}
 		assert(err == nil, "%s: read err: %s", from, err)
 		assert(nr == len(sumr[:]), "%s: partial read, exp %d, saw %d", from, len(sumr[:]), nr)
@@ -285,6 +271,7 @@ func (c *tcpclient) loop(n int) {
 		c.nr += len(sumr[:])
 		//c.t.Logf("%s: TX %d, RX %d\n", addr, nw, len(sumr[:]))
 	}
+	return nil
 }
 
 func writefull(fd io.Writer, b []byte) (int, error) {

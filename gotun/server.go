@@ -329,6 +329,8 @@ func (p *TCPServer) handleTCP(conn Conn, ctx context.Context) {
 		err := econn.Handshake()
 		if err != nil {
 			p.log.Warn("can't establish TLS with %s: %s", lhs, err)
+			conn.Close()
+			p.wg.Done()
 			return
 		}
 
