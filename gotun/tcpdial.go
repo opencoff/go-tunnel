@@ -45,7 +45,7 @@ func (t *tcpDialer) Dial(network string, addr string, lhs Conn, ctx context.Cont
 		return nil, fmt.Errorf("can't dial %s: %w", addr, err)
 	}
 
-	t.log.Debug("connected to %s.", addr)
+	t.log.Debug("%s connected to  %s", peer.LocalAddr().String(), addr)
 	if t.r.clientTls != nil {
 		econn := tls.Client(peer, t.r.clientTls)
 		err := econn.Handshake()

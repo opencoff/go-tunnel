@@ -140,11 +140,11 @@ func defaults(c *Conf) *Conf {
 			t.Connect = 5
 		}
 		if t.Read == 0 {
-			t.Read = 30
+			t.Read = 2
 		}
 
 		if t.Write == 0 {
-			t.Write = 30
+			t.Write = 2
 		}
 
 	}

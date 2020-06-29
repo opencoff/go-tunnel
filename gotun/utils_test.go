@@ -16,6 +16,7 @@ package main
 import (
 	"crypto/subtle"
 	"fmt"
+	L "github.com/opencoff/go-logger"
 	"runtime"
 	"testing"
 )
@@ -35,6 +36,24 @@ func newAsserter(t *testing.T) func(cond bool, msg string, args ...interface{}) 
 		s := fmt.Sprintf(msg, args...)
 		t.Fatalf("%s: %d: Assertion failed: %s\n", file, line, s)
 	}
+}
+
+// io.Writer for logging
+type logWriter struct {
+	*testing.T
+}
+
+func (a *logWriter) Write(b []byte) (int, error) {
+	a.Logf("# %s\n", string(b))
+	return len(b), nil
+}
+
+func newLogger(t *testing.T) *L.Logger {
+	assert := newAsserter(t)
+	a := &logWriter{T: t}
+	log, err := L.New(a, L.LOG_DEBUG, "gotun-test", 0)
+	assert(err == nil, "can't create logger: %s", err)
+	return log
 }
 
 // Return true if two byte arrays are equal
