@@ -1,7 +1,7 @@
-# go-tunnel - Robust TLS Tunnel (Stunnel replacement)
+# go-tunnel - Robust Quic/TLS Tunnel (Stunnel replacement)
 
 ## What is it?
-An [Stunnel](https://www.stunnel.org) replacement written in golang. It is
+A supercharged [Stunnel](https://www.stunnel.org) replacement written in golang. It is
 is in a sense a proxy enabling addition of network-encryption to existing
 clients without any source code changes.
 
@@ -9,9 +9,10 @@ go-tunnel uses golang's TLS stack and built-in certification verification.
 
 ## Features
 
-- TLS 1.2 for client and server mode (TLS Connect or TLS Listen)
-- Optional TLS client certificate (for TLS Connect)
-- SNI on the listening TLS server
+- TLS 1.3 for client and server mode (TLS Connect or TLS Listen)
+- Quic client and server mode (Quic listen or Quic connect)
+- Optional TLS client certificate (for Quic/TLS Connect)
+- SNI on the listening Quic/TLS server
 - Ratelimits - global and per-IP
 - [Proxy-Protocol](https://www.haproxy.org/download/1.8/doc/proxy-protocol.txt)
   v1 support when connecting to downstream servers

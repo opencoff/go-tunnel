@@ -173,6 +173,10 @@ func (s *Server) newTCPServer() Proxy {
 func (s *Server) newQuicServer() Proxy {
 	addr := s.Addr
 
+	if len(s.tls.ServerName) == 0 {
+		die("Quic Server %s: No TLS server name specified", addr)
+	}
+
 	la, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		die("Can't resolve %s: %s", addr, err)
@@ -182,6 +186,12 @@ func (s *Server) newQuicServer() Proxy {
 	if err != nil {
 		die("Can't listen on %s: %s", addr, err)
 	}
+
+	// we need to set the next-proto to be relay or socks
+	var nextproto = "relay"
+	s.tls.NextProtos = []string{nextproto}
+
+	// XXX do we verify ServerName?
 
 	q, err := quic.Listen(ln, s.tls, &quic.Config{})
 	if err != nil {

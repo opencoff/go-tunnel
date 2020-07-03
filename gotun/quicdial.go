@@ -39,6 +39,10 @@ type qConn struct {
 }
 
 func newQuicDialer(r *Server, log *L.Logger) (Dialer, error) {
+
+	var nextproto = "relay"
+	r.clientTls.NextProtos = []string{nextproto}
+
 	q := &quicDialer{
 		r:    r,
 		log:  log,
