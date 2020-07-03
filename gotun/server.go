@@ -203,7 +203,12 @@ func (p *TCPServer) Start() {
 	go func() {
 		defer p.wg.Done()
 
-		p.log.Info("Starting TCP server ..")
+		if p.tls != nil {
+			p.log.Info("Starting TLS server ..")
+		} else {
+			p.log.Info("Starting TCP server ..")
+		}
+
 		p.log.Info("Ratelimit: Global %d req/s, Per-host: %d req/s",
 			p.Ratelimit.Global, p.Ratelimit.PerHost)
 

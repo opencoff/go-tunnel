@@ -190,6 +190,102 @@ func TestQuicAuthToTcp(t *testing.T) {
 	log.Close()
 }
 
+// Client -> gotun Quic with client auth
+// gotun -> backend TLS
+func TestQuicAuthToTls(t *testing.T) {
+	assert := newAsserter(t)
+
+	pki, err := newPKI()
+	assert(err == nil, "can't create PKI: %s", err)
+
+	pkic, err := newPKI()
+	assert(err == nil, "can't create client PKI: %s", err)
+
+	clientCert, err := pkic.ClientCert("client.name")
+	assert(err == nil, "can't create client cert: %s", err)
+
+	spool := x509.NewCertPool()
+	spool.AddCert(pki.ca)
+
+	cpool := x509.NewCertPool()
+	cpool.AddCert(pkic.ca)
+
+	cfg := quicSetup(8020, 8021)
+	lc := cfg.Listen[0]
+
+	cert, err := pki.ServerCert("server.name", lc.Addr)
+	assert(err == nil, "can't create server cert: %s", err)
+
+	// config for quic server
+	qtlsCfg := &tls.Config{
+		MinVersion:             tls.VersionTLS13,
+		ServerName:             "server.name",
+		SessionTicketsDisabled: true,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305, // Go 1.8 only
+			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+
+			// Best disabled, as they don't provide Forward Secrecy,
+			// but might be necessary for some clients
+			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
+		},
+		NextProtos:   []string{"relay"},
+		RootCAs:      spool,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    cpool,
+		CurvePreferences: []tls.CurveID{
+			tls.CurveP256,
+			tls.X25519,
+		},
+	}
+
+	// mock TLS server config
+	stlsCfg := *qtlsCfg
+	stlsCfg.ClientAuth = tls.NoClientCert
+	stlsCfg.ClientCAs = nil
+
+	// gotun TLS client config
+	gtlsCfg := *qtlsCfg
+	gtlsCfg.Certificates = nil
+	gtlsCfg.ClientAuth = tls.NoClientCert
+	gtlsCfg.ClientCAs = nil
+
+	lc.serverCfg = qtlsCfg
+	lc.clientCfg = &gtlsCfg
+
+	// client quic config; we need the proper root and client certs
+	ctlsCfg := *qtlsCfg
+	ctlsCfg.Certificates = []tls.Certificate{clientCert}
+
+	// create a TLS server on the other end of a connector
+	s := newTcpServer("tcp", lc.Connect.Addr, &stlsCfg, t)
+	assert(s != nil, "server creation failed")
+
+	log := newLogger(t)
+	gt := NewServer(lc, cfg, log)
+	gt.Start()
+
+	// Now create a mock client to send data to mock server
+	c := newQuicClient("udp", lc.Addr, &ctlsCfg, t)
+	assert(c != nil, "client creation failed")
+
+	c.start(10)
+
+	assert(c.nw == s.nr, "i/o mismatch: client TX %d, server RX %d", c.nw, s.nr)
+	assert(c.nr == s.nw, "i/o mismatch: server TX %d, client RX %d", s.nw, c.nr)
+
+	c.stop()
+	s.stop()
+	gt.Stop()
+	log.Close()
+}
+
 // Client -> tcp
 // gotun -> backend quic
 func TestTcpToQuicAuth(t *testing.T) {

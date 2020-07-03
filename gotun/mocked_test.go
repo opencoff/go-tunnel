@@ -89,15 +89,15 @@ func (s *tcpserver) accept() {
 }
 
 func (s *tcpserver) relay(fd net.Conn) {
-	there := fd.RemoteAddr().String()
+	there := fd.LocalAddr().String()
 	assert := newAsserter(s.t)
 	done := s.ctx.Done()
-	from := fmt.Sprintf("%s--%s", there, fd.LocalAddr().String())
+	from := fmt.Sprintf("%s--%s", there, fd.RemoteAddr().String())
 
 	defer func() {
 		s.wg.Done()
 		fd.Close()
-		s.t.Logf("mock tcp server: closed conn from %s\n", there)
+		s.t.Logf("mock tcp server: closed conn %s\n", from)
 	}()
 
 	s.t.Logf("mock tcp server: new conn from %s\n", there)
@@ -108,7 +108,7 @@ func (s *tcpserver) relay(fd net.Conn) {
 		assert(err == nil, "TLS handshake failed: %s", err)
 		fd = econn
 
-		s.t.Logf("mock tcp server: Upgraded %s to TLS\n", there)
+		s.t.Logf("mock tcp server: Upgraded %s to TLS\n", from)
 	}
 
 	buf := make([]byte, IOSIZE)
