@@ -71,24 +71,27 @@ func (q *quicDialer) Dial(network, addr string, _ Conn, ctx context.Context) (Co
 		if err != nil {
 			q.Unlock()
 
-			q.log.Warn("quic: can't dial %s: %s", addr, err)
+			q.log.Warn("quic-client: can't dial %s: %s", addr, err)
 			return nil, fmt.Errorf("quic: %s: %w", addr, err)
 		}
 
 		state := d.ConnectionState()
-		q.log.Debug("quic: Established new session with %s [%s]", addr, state.ServerName)
+		q.log.Debug("quic-client: established new session %s-%s [%s]", d.LocalAddr().String(),
+			d.RemoteAddr().String(), state.ServerName)
 		q.dest[key] = d
 	}
 	q.Unlock()
 
-	t, err := d.OpenStream()
+	t, err := d.OpenStreamSync(ctx)
 	if err != nil {
-		q.log.Warn("quic: %s: can't open new stream: %s", addr, err)
+		q.log.Warn("quic-client: %s: can't open new stream: %s", addr, err)
 		return nil, fmt.Errorf("quic: %s: %w", addr, err)
 	}
 
-	log := q.log.New(fmt.Sprintf("%s.%#x", addr, t.StreamID()), 0)
-	log.Debug("quic: %s: opened new stream %#x", addr, t.StreamID())
+	connstr := fmt.Sprintf("%s-%s.%#x", d.LocalAddr().String(), d.RemoteAddr().String(), t.StreamID())
+	log := q.log.New(connstr, 0)
+	log.Debug("quic-client: opened new stream %#x", t.StreamID())
+
 	c := &qConn{
 		Stream: t,
 		s:      d,
@@ -112,7 +115,7 @@ func (a *qAddr) String() string {
 	return fmt.Sprintf("%s.%#x", a.a.String(), a.id)
 }
 
-// implement new.Conn interfaces too
+// implement net.Conn interfaces too
 func (c *qConn) LocalAddr() net.Addr {
 	return &qAddr{
 		a:  c.s.LocalAddr(),

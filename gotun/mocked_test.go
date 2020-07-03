@@ -21,6 +21,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/lucas-clemente/quic-go"
 )
 
 const (
@@ -59,10 +61,10 @@ func newTcpServer(network, addr string, tcfg *tls.Config, t *testing.T) *tcpserv
 }
 
 func (s *tcpserver) stop() {
-	s.t.Logf("stopping mock server on %s", s.Addr())
 	s.cancel()
 	s.Close()
 	s.wg.Wait()
+	s.t.Logf("stopped mock tcp server on %s", s.Addr())
 }
 
 func (s *tcpserver) accept() {
@@ -71,7 +73,7 @@ func (s *tcpserver) accept() {
 	assert := newAsserter(s.t)
 	done := s.ctx.Done()
 	addr := s.Addr().String()
-	s.t.Logf("%s: mock server waiting for new conn ..\n", addr)
+	s.t.Logf("%s: mock tcp server waiting for new conn ..\n", addr)
 	for {
 		conn, err := s.Accept()
 		select {
@@ -167,8 +169,6 @@ type tcpclient struct {
 	t      *testing.T
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	wg sync.WaitGroup
 }
 
 func newTcpClient(network, addr string, tcfg *tls.Config, t *testing.T) *tcpclient {
@@ -197,13 +197,14 @@ func (c *tcpclient) start(n int) error {
 		return err
 	}
 
-	c.t.Logf("mock tcp client: connected to %s\n", c.addr)
+	c.t.Logf("mock tcp client: %s connected to %s\n", c.LocalAddr().String(), c.addr)
 	return c.loop(n)
 }
 
 func (c *tcpclient) stop() {
 	c.cancel()
 	c.Close()
+	c.t.Logf("mock tcp client %s-%s stopped\n", c.LocalAddr().String(), c.addr)
 }
 
 func (c *tcpclient) loop(n int) error {
@@ -215,7 +216,7 @@ func (c *tcpclient) loop(n int) error {
 
 	defer func() {
 		c.Close()
-		c.t.Logf("mock tcp client: closing conn to %s\n", addr)
+		c.t.Logf("mock tcp client: closing conn %s\n", from)
 	}()
 
 	if c.tls != nil {
@@ -308,6 +309,278 @@ func readfull(fd io.Reader, b []byte) (int, error) {
 }
 
 type quicserver struct {
+	quic.Listener
+
+	t *testing.T
+
+	nr int
+	nw int
+
+	tls    *tls.Config
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+}
+
+func newQuicServer(network, addr string, tcfg *tls.Config, t *testing.T) *quicserver {
+	assert := newAsserter(t)
+
+	la, err := net.ResolveUDPAddr("udp", addr)
+	assert(err == nil, "can't resolve addr %s: %s", addr, err)
+
+	ln, err := net.ListenUDP("udp", la)
+	assert(err == nil, "can't listen UDP %s: %s", addr, err)
+
+	q, err := quic.Listen(ln, tcfg, &quic.Config{})
+	assert(err == nil, "can't listen quic %s: %s", addr, err)
+
+	qs := &quicserver{
+		Listener: q,
+		t:        t,
+	}
+
+	qs.ctx, qs.cancel = context.WithCancel(context.Background())
+	qs.wg.Add(1)
+	go qs.accept()
+	return qs
+}
+
+func (q *quicserver) stop() {
+	q.cancel()
+	q.Close()
+	q.wg.Wait()
+	q.t.Logf("stopped mock quic server on %s", q.Addr())
+}
+
+func (q *quicserver) accept() {
+	assert := newAsserter(q.t)
+	defer q.wg.Done()
+
+	q.t.Logf("mock quic server listening on %s ..\n", q.Addr().String())
+	done := q.ctx.Done()
+	for {
+		sess, err := q.Accept(q.ctx)
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		assert(err == nil, "can't accept quic: %s", err)
+
+		q.wg.Add(1)
+		go q.serveSession(sess)
+	}
+}
+
+func (q *quicserver) serveSession(sess quic.Session) {
+	defer q.wg.Done()
+
+	assert := newAsserter(q.t)
+	done := q.ctx.Done()
+	for {
+		conn, err := sess.AcceptStream(q.ctx)
+		select {
+		case <-done:
+			return
+		default:
+		}
+		assert(err == nil, "can't accept quic-stream: %s", err)
+
+		qc := &qconn{
+			Stream: conn,
+			s:      sess,
+		}
+
+		q.t.Logf("mock quic server accepted new stream %d from %s\n", conn.StreamID(), qc.RemoteAddr().String())
+		q.wg.Add(1)
+		go q.relay(qc)
+	}
+}
+
+func (q *quicserver) relay(fd *qconn) {
+	assert := newAsserter(q.t)
+	done := q.ctx.Done()
+	addr := fd.RemoteAddr().String()
+	from := fmt.Sprintf("%s-%s", fd.LocalAddr().String(), addr)
+
+	defer func() {
+		q.wg.Done()
+		fd.Close()
+		q.t.Logf("mock quic server: closed conn from %s\n", from)
+	}()
+
+	buf := make([]byte, IOSIZE)
+	var csum [sha256.Size]byte
+
+	// All timeouts are v short
+	rto := 5 * time.Second
+
+	h := sha256.New()
+	for i := 0; ; i++ {
+		fd.SetReadDeadline(time.Now().Add(rto))
+		nr, err := readfull(fd, buf)
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		if errors.Is(err, io.EOF) || nr == 0 {
+			q.t.Logf("%s: EOF? nr=%d, err %s\n", from, nr, err)
+			return
+		}
+		assert(err == nil, "%s: read err: %s", from, err)
+
+		q.nr += nr
+		h.Reset()
+		h.Write(buf[:nr])
+		sum := h.Sum(csum[:0])
+
+		//q.t.Logf("%s: %d: RX %d [%x]\n", from, i, nr, sum[:])
+		fd.SetWriteDeadline(time.Now().Add(rto))
+		nw, err := writefull(fd, sum[:])
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		assert(err == nil, "%s: write err: %s", from, err)
+		assert(nw == len(sum[:]), "%s: partial write; exp %d, saw %d", from, len(sum[:]), nw)
+
+		//q.t.Logf("%s: RX %d bytes, TX %d\n", from, nr, len(sum[:]))
+		q.nw += len(sum[:])
+	}
+}
+
+type quicclient struct {
+	*qconn
+
+	session quic.Session
+
+	nr int
+	nw int
+
+	t *testing.T
+
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// abstraction to make this look like a net.Conn
+type qconn struct {
+	quic.Stream
+	s quic.Session
+}
+
+// qAddr is defined in quicdial.go
+func (qc *qconn) LocalAddr() net.Addr {
+	return &qAddr{
+		a:  qc.s.LocalAddr(),
+		id: qc.StreamID(),
+	}
+}
+
+func (qc *qconn) RemoteAddr() net.Addr {
+	return &qAddr{
+		a:  qc.s.RemoteAddr(),
+		id: qc.StreamID(),
+	}
+}
+
+func newQuicClient(network, addr string, tcfg *tls.Config, t *testing.T) *quicclient {
+	assert := newAsserter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	d, err := quic.DialAddrContext(ctx, addr, tcfg, &quic.Config{})
+	assert(err == nil, "can't dial quic %s: %s", addr, err)
+
+	st := d.ConnectionState()
+	t.Logf("mock quic client: connected to %s [%s]\n", addr, st.ServerName)
+
+	fd, err := d.OpenStream()
+	assert(err == nil, "can't open quic stream to %s: %s", addr, err)
+
+	t.Logf("mock quic client: connected to %s\n", addr)
+	qc := &qconn{
+		Stream: fd,
+		s:      d,
+	}
+
+	q := &quicclient{
+		qconn:   qc,
+		session: d,
+		t:       t,
+		ctx:     ctx,
+		cancel:  cancel,
+	}
+
+	return q
+}
+
+func (q *quicclient) start(n int) {
+	assert := newAsserter(q.t)
+	done := q.ctx.Done()
+	addr := q.RemoteAddr().String()
+	from := fmt.Sprintf("%s-%s", q.LocalAddr().String(), addr)
+
+	defer func() {
+		q.cancel()
+		q.Close()
+		q.t.Logf("mock quic client: closing conn %s\n", from)
+	}()
+
+	buf := make([]byte, IOSIZE)
+	rand.Read(buf)
+	fd := q.qconn
+
+	var sumr, csuma [sha256.Size]byte
+
+	h := sha256.New()
+	for i := 0; i < n; i++ {
+		nw, err := writefull(fd, buf)
+		select {
+		case <-done:
+			return
+		default:
+		}
+		assert(err == nil, "%s: write err: %s", from, err)
+		assert(nw == len(buf), "%s: partial write, exp %d, saw %d", from, len(buf), nw)
+
+		q.nw += nw
+
+		h.Reset()
+		h.Write(buf)
+		suma := h.Sum(csuma[:0])
+
+		//c.t.Logf("%s: %d: TX %d [%x]\n", from, i, nw, suma[:])
+
+		nr, err := readfull(fd, sumr[:])
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		if errors.Is(err, io.EOF) || nr == 0 {
+			q.t.Logf("%s: EOF? nr %d\n", from, nr)
+			return
+		}
+		assert(err == nil, "%s: read err: %s", from, err)
+		assert(nr == len(sumr[:]), "%s: partial read, exp %d, saw %d", from, len(sumr[:]), nr)
+
+		assert(byteEq(suma[:], sumr[:]), "%s: cksum mismatch;\nexp %x\nsaw %x", from, suma[:], sumr[:])
+		inc(buf)
+		q.nr += len(sumr[:])
+		//c.t.Logf("%s: TX %d, RX %d\n", addr, nw, len(sumr[:]))
+	}
+	return
+}
+
+func (q *quicclient) stop() {
+	q.cancel()
+	q.Close()
 }
 
 type pki struct {

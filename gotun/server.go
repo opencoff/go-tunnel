@@ -244,10 +244,11 @@ func (p *QuicServer) Stop() {
 
 func (p *TCPServer) serveTCP() {
 	n := 0
+	done := p.ctx.Done()
 	for {
 		conn, err := p.Accept()
 		select {
-		case <-p.ctx.Done():
+		case <-done:
 			return
 		default:
 		}
@@ -275,9 +276,16 @@ func (p *TCPServer) serveTCP() {
 
 func (p *QuicServer) serveQuic() {
 	n := 0
+	done := p.ctx.Done()
 	for {
 		p.rl.Wait(p.ctx)
 		sess, err := p.Accept(p.ctx)
+		select {
+		case <-done:
+			return
+		default:
+		}
+
 		if err != nil {
 			n += 1
 			if n >= 10 {
@@ -293,8 +301,26 @@ func (p *QuicServer) serveQuic() {
 		// wait for per-host ratelimiter
 		p.rl.WaitHost(p.ctx, sess.RemoteAddr())
 
+		n = 0
+		p.wg.Add(1)
+		go p.serviceSession(sess)
+	}
+}
+
+func (p *QuicServer) serviceSession(sess quic.Session) {
+	defer p.wg.Done()
+	done := p.ctx.Done()
+
+	n := 0
+	for {
 		// we also accept the corresponding stream
 		conn, err := sess.AcceptStream(p.ctx)
+		select {
+		case <-done:
+			return
+		default:
+		}
+
 		if err != nil {
 			n += 1
 			if n >= 10 {
@@ -312,7 +338,7 @@ func (p *QuicServer) serveQuic() {
 			Stream: conn,
 			s:      sess,
 		}
-		peer := qc.RemoteAddr()
+		peer := qc.LocalAddr()
 		ctx := context.WithValue(p.ctx, "client", peer.String())
 
 		qc.log = p.log.New(peer.String(), 0)
@@ -362,8 +388,8 @@ func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
 
 	// we grab the printable info before the socket is closed
 	lhs_theirs := conn.RemoteAddr().String()
-	inbound := fmt.Sprintf("%s-%s", lhs_theirs, conn.LocalAddr().String())
 	rhs_theirs := peer.RemoteAddr().String()
+	inbound := fmt.Sprintf("%s-%s", conn.LocalAddr().String(), lhs_theirs)
 	outbound := fmt.Sprintf("%s-%s", peer.LocalAddr().String(), rhs_theirs)
 
 	// we really need to log this in the parent logger
@@ -417,8 +443,60 @@ func (p *Server) putBuf(b []byte) {
 	p.pool.Put(b)
 }
 
+func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log *L.Logger) (x, y int) {
+	rto := time.Duration(p.Timeout.Read) * time.Second
+	wto := time.Duration(p.Timeout.Write) * time.Second
+	done := ctx.Done()
+	for {
+		s.SetReadDeadline(time.Now().Add(rto))
+		nr, err := s.Read(buf)
+		select {
+		case <-done:
+			return
+		default:
+		}
+
+		if err != nil {
+			if err != io.EOF && err != context.Canceled && !isReset(err) {
+				log.Debug("%s: nr %d, read err %s", s.LocalAddr().String(), nr, err)
+				return
+			}
+		}
+
+		switch {
+		case nr == 0:
+			log.Debug("EOF")
+			return
+
+		case nr > 0:
+			d.SetWriteDeadline(time.Now().Add(wto))
+			x += nr
+			nw, err := d.Write(buf[:nr])
+			select {
+			case <-done:
+				return
+			default:
+			}
+
+			if err != nil {
+				log.Debug("%s: Write Err %s", d.RemoteAddr().String(), err)
+				return
+			}
+			if nw != nr {
+				return
+			}
+			y += nw
+		}
+		if err != nil {
+			log.Debug("%s: read error: %s", s.RemoteAddr().String(), err)
+			return
+		}
+	}
+}
+
+/*
 // interruptible copy
-func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log *L.Logger) (r, w int) {
+func (p *Server) xcancellableCopy(d, s Conn, buf []byte, ctx context.Context, log *L.Logger) (r, w int) {
 
 	ch := make(chan bool)
 	go func() {
@@ -441,7 +519,7 @@ func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log
 }
 
 // copy from 's' to 'd' using 'buf'
-func (p *Server) copyBuf(d, s Conn, buf []byte, log *L.Logger) (x, y int) {
+func (p *Server) xcopyBuf(d, s Conn, buf []byte, log *L.Logger) (x, y int) {
 	rto := time.Duration(p.Timeout.Read) * time.Second
 	wto := time.Duration(p.Timeout.Write) * time.Second
 	for {
@@ -529,6 +607,7 @@ func (p *TCPServer) Accept() (net.Conn, error) {
 		return nc, nil
 	}
 }
+*/
 
 func (s *Server) getSNIHandler(dir string, log *L.Logger) func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	conf := s.conf

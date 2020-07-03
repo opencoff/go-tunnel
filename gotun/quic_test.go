@@ -1,4 +1,4 @@
-// tcp_test.go - test tcp/tls endpoints
+// quic_test.go - test quic to {TCP, TLS} endpoints
 
 package main
 
@@ -6,11 +6,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"sync"
 	"testing"
 )
 
 // return a configured Conf
-func testSetup(lport, cport int) *Conf {
+func quicSetup(lport, cport int) *Conf {
 
 	// TCP connect
 	// We'll spin up a simple server on the connect endpoint
@@ -20,7 +21,7 @@ func testSetup(lport, cport int) *Conf {
 
 	lc := &ListenConf{
 		Addr: laddr,
-
+		Quic: true,
 		Connect: ConnectConf{
 			Addr: caddr,
 		},
@@ -34,50 +35,15 @@ func testSetup(lport, cport int) *Conf {
 	return defaults(c)
 }
 
-// Client -> gotun TCP
+// Client -> gotun Quic
 // gotun -> backend TCP
-func TestTcpToTcp(t *testing.T) {
-	assert := newAsserter(t)
-
-	// create a logger
-	log := newLogger(t)
-
-	cfg := testSetup(9000, 9001)
-
-	lc := cfg.Listen[0]
-
-	// create a server on the other end of a connector
-	s := newTcpServer("tcp", lc.Connect.Addr, nil, t)
-	assert(s != nil, "server creation failed")
-
-	gt := NewServer(lc, cfg, log)
-	gt.Start()
-
-	// Now create a mock client to send data to mock server
-	c := newTcpClient("tcp", lc.Addr, nil, t)
-	assert(c != nil, "client creation failed")
-
-	err := c.start(10)
-	assert(err == nil, "can't start tcp client: %s", err)
-
-	assert(c.nw == s.nr, "i/o mismatch: client TX %d, server RX %d", c.nw, s.nr)
-	assert(c.nr == s.nw, "i/o mismatch: server TX %d, client RX %d", s.nw, c.nr)
-
-	c.stop()
-	s.stop()
-	gt.Stop()
-	log.Close()
-}
-
-// Client -> gotun TLS
-// gotun -> backend TCP
-func TestTlsToTcp(t *testing.T) {
+func TestQuicToTcp(t *testing.T) {
 	assert := newAsserter(t)
 
 	pki, err := newPKI()
 	assert(err == nil, "can't create PKI: %s", err)
 
-	cfg := testSetup(9005, 9006)
+	cfg := quicSetup(8005, 8006)
 	lc := cfg.Listen[0]
 
 	cert, err := pki.ServerCert("server.name", lc.Addr)
@@ -102,6 +68,7 @@ func TestTlsToTcp(t *testing.T) {
 			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
 			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
 		},
+		NextProtos:   []string{"relay"},
 		RootCAs:      pool,
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.NoClientCert,
@@ -126,7 +93,7 @@ func TestTlsToTcp(t *testing.T) {
 	gt.Start()
 
 	// Now create a mock client to send data to mock server
-	c := newTcpClient("tcp", lc.Addr, &ctlsCfg, t)
+	c := newQuicClient("udp", lc.Addr, &ctlsCfg, t)
 	assert(c != nil, "client creation failed")
 
 	c.start(10)
@@ -140,9 +107,9 @@ func TestTlsToTcp(t *testing.T) {
 	log.Close()
 }
 
-// Client -> gotun TLS with client auth
+// Client -> gotun Quic with client auth
 // gotun -> backend TCP
-func TestClientTlsToTcp(t *testing.T) {
+func TestQuicAuthToTcp(t *testing.T) {
 	assert := newAsserter(t)
 
 	pki, err := newPKI()
@@ -160,7 +127,7 @@ func TestClientTlsToTcp(t *testing.T) {
 	cpool := x509.NewCertPool()
 	cpool.AddCert(pkic.ca)
 
-	cfg := testSetup(9008, 9009)
+	cfg := quicSetup(8008, 8009)
 	lc := cfg.Listen[0]
 
 	cert, err := pki.ServerCert("server.name", lc.Addr)
@@ -183,6 +150,7 @@ func TestClientTlsToTcp(t *testing.T) {
 			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
 			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
 		},
+		NextProtos:   []string{"relay"},
 		RootCAs:      spool,
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
@@ -208,7 +176,7 @@ func TestClientTlsToTcp(t *testing.T) {
 	gt.Start()
 
 	// Now create a mock client to send data to mock server
-	c := newTcpClient("tcp", lc.Addr, &ctlsCfg, t)
+	c := newQuicClient("udp", lc.Addr, &ctlsCfg, t)
 	assert(c != nil, "client creation failed")
 
 	c.start(10)
@@ -222,10 +190,12 @@ func TestClientTlsToTcp(t *testing.T) {
 	log.Close()
 }
 
-// Client -> gotun TLS with *bad* client auth
-// gotun -> backend TCP
-func TestClientBadTlsToTcp(t *testing.T) {
+// Client -> tcp
+// gotun -> backend quic
+func TestTcpToQuicAuth(t *testing.T) {
 	assert := newAsserter(t)
+
+	log := newLogger(t)
 
 	pki, err := newPKI()
 	assert(err == nil, "can't create PKI: %s", err)
@@ -233,14 +203,22 @@ func TestClientBadTlsToTcp(t *testing.T) {
 	pkic, err := newPKI()
 	assert(err == nil, "can't create client PKI: %s", err)
 
+	clientCert, err := pkic.ClientCert("client.name")
+	assert(err == nil, "can't create client cert: %s", err)
+
 	spool := x509.NewCertPool()
 	spool.AddCert(pki.ca)
 
 	cpool := x509.NewCertPool()
 	cpool.AddCert(pkic.ca)
 
-	cfg := testSetup(9010, 9011)
+	cfg := testSetup(8008, 8009)
 	lc := cfg.Listen[0]
+
+	// we want outgoing connect to be quic
+	lc.Connect.Quic = true
+
+	cfg.Dump(log)
 
 	cert, err := pki.ServerCert("server.name", lc.Addr)
 	assert(err == nil, "can't create server cert: %s", err)
@@ -262,6 +240,7 @@ func TestClientBadTlsToTcp(t *testing.T) {
 			// tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
 			// tls.TLS_RSA_WITH_AES_128_GCM_SHA256,
 		},
+		NextProtos:   []string{"relay"},
 		RootCAs:      spool,
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
@@ -272,28 +251,49 @@ func TestClientBadTlsToTcp(t *testing.T) {
 		},
 	}
 
-	lc.serverCfg = tlsCfg
-
 	// client TLS config; we need the proper root
 	ctlsCfg := *tlsCfg
+	ctlsCfg.Certificates = []tls.Certificate{clientCert}
 
-	// This is a _bad_ client cert (different root)
-	ctlsCfg.Certificates = []tls.Certificate{cert}
+	// outbound connection is a Quic client
+	lc.clientCfg = &ctlsCfg
 
 	// create a server on the other end of a connector
-	s := newTcpServer("tcp", lc.Connect.Addr, nil, t)
+	s := newQuicServer("udp", lc.Connect.Addr, tlsCfg, t)
 	assert(s != nil, "server creation failed")
 
-	log := newLogger(t)
 	gt := NewServer(lc, cfg, log)
 	gt.Start()
 
 	// Now create a mock client to send data to mock server
-	c := newTcpClient("tcp", lc.Addr, &ctlsCfg, t)
+	c := newTcpClient("tcp", lc.Addr, nil, t)
 	assert(c != nil, "client creation failed")
 
-	c.start(10)
-	assert(c.nr == 0, "client read from closed conn %d bytes", c.nr)
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		err := c.start(10)
+		assert(err == nil, "tcp client can't connect: %s", err)
+		wg.Done()
+	}()
+
+	// now we test muxing multiple inbound TCPs to a single
+	// quic session + multiple streams
+
+	c2 := newTcpClient("tcp", lc.Addr, nil, t)
+	assert(c2 != nil, "second client creation failed")
+
+	wg.Add(1)
+	go func() {
+		err := c2.start(10)
+		assert(err == nil, "tcp client can't connect: %s", err)
+		wg.Done()
+	}()
+
+	wg.Wait()
+	assert(c.nw+c2.nw == s.nr, "i/o mismatch: client TX %d; %d, server RX %d", c.nw, c2.nw, s.nr)
+	assert(c.nr+c2.nr == s.nw, "i/o mismatch: server TX %d, client RX %d; %d", s.nw, c.nr, c2.nr)
 
 	c.stop()
 	s.stop()

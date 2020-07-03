@@ -9,6 +9,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -432,38 +433,49 @@ func (c *Conf) Path(nm string) string {
 
 // Print config in human readable format
 func (c *Conf) Dump(w io.Writer) {
-	fmt.Fprintf(w, "config: %d listeners\n", len(c.Listen))
+
+	b := &bytes.Buffer{}
+
+	fmt.Fprintf(b, "config: %d listeners\n", len(c.Listen))
 
 	for _, l := range c.Listen {
-		fmt.Fprintf(w, "listen on %s", l.Addr)
+		fmt.Fprintf(b, "listen on %s", l.Addr)
+		if l.Quic {
+			fmt.Fprintf(b, " quic")
+		}
 		if t := l.Tls; t != nil {
 			if len(t.Sni) > 0 {
-				fmt.Fprintf(w, " with tls sni using certstore %s", t.Sni)
+				fmt.Fprintf(b, " bith tls sni using certstore %s", t.Sni)
 			} else {
-				fmt.Fprintf(w, " with tls using cert %s, key %s",
+				fmt.Fprintf(b, " bith tls using cert %s, key %s",
 					t.Cert, t.Key)
 			}
 			if t.ClientCert == "required" {
-				fmt.Fprintf(w, " requiring client auth")
+				fmt.Fprintf(b, " requiring client auth")
 			} else if t.ClientCert == "optional" {
-				fmt.Fprintf(w, " with optional client auth")
+				fmt.Fprintf(b, " bith optional client auth")
 			}
 		}
 		c := &l.Connect
-		fmt.Fprintf(w, "\n\tconnect to %s", c.Addr)
+		fmt.Fprintf(b, "\n\tconnect to %s", c.Addr)
 		if len(c.Bind) > 0 {
-			fmt.Fprintf(w, " from %s", c.Bind)
+			fmt.Fprintf(b, " from %s", c.Bind)
 		}
 		if len(c.ProxyProtocol) > 0 {
-			fmt.Fprintf(w, " using proxy-protocol %s", c.ProxyProtocol)
+			fmt.Fprintf(b, " using proxy-protocol %s", c.ProxyProtocol)
+		}
+		if c.Quic {
+			fmt.Fprintf(b, " with quic")
 		}
 		if t := c.Tls; t != nil {
-			fmt.Fprintf(w, " using tls")
+			fmt.Fprintf(b, " using tls")
 			if len(t.Cert) > 0 {
-				fmt.Fprintf(w, " cert %s, key %s", t.Cert, t.Key)
+				fmt.Fprintf(b, " cert %s, key %s", t.Cert, t.Key)
 			}
-			fmt.Fprintf(w, " and ca-bundle %s", t.Ca)
+			fmt.Fprintf(b, " and ca-bundle %s", t.Ca)
 		}
-		fmt.Fprintf(w, "\n")
+		fmt.Fprintf(b, "\n")
 	}
+
+	w.Write(b.Bytes())
 }

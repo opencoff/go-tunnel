@@ -44,7 +44,12 @@ type logWriter struct {
 }
 
 func (a *logWriter) Write(b []byte) (int, error) {
-	a.Logf("# %s\n", string(b))
+	var nl string
+
+	if b[len(b)-1] != '\n' {
+		nl = "\n"
+	}
+	a.Logf("# %s%s", string(b), nl)
 	return len(b), nil
 }
 
