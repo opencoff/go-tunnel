@@ -7,6 +7,7 @@
 // suitability for any purpose.
 
 // +build windows
+
 package main
 
 func DropPrivilege(uids, guids string) {

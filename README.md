@@ -60,7 +60,7 @@ a second `gotun` instance will unbundle the SOCKS protocol and
 connect to the final destination.
 
 The config file shown above actually demonstrates a really secure tunnel
-- where the server and client both use certificates to authenticate each other.
+where the server and client both use certificates to authenticate each other.
 
 Assuming the config on "Gotunnel Laptop" is in file `client.conf`, and the
 config on "Gotunnel Server" is in `server.conf`, to run the above example,
@@ -228,6 +228,32 @@ for hostname "blog.mydomain.com" via SNI, then `gotun` will look for `blog.mydom
 `blog.mydomain.com.key` in the directory identified by `tls.certdir`. The config file above has
 an example for SNI configured on listen address `127.0.0.1:9443`.
 
+## Generating Local Certificates
+If you want client authentication and don't want the hassle of using
+openssl or a commercial CA for obtaining the certs, you can use
+[certik]((https://github.com/opencoff/certik) to create an easy,
+opinionated local CA infrastucture. Assuming you are on a
+linux-amd64 platform:
+
+```sh
+
+$ git clone https://github.com/opencoff/certik
+$ cd certik
+$ ./build -s
+$ ./bin/linux-amd64/certik ca.db init "client CA" 
+$ ./bin/linux-amd64/certik ca.db user username@example.com
+$ ./bin/linux-amd64/certik ca.db export -o ca --ca
+$ ./bin/linux-amd64/certik ca.db export -o username username@example.com
+
+```
+
+Now, you have `ca.crt` as the CA root of trust for the Quic server
+to validate client certs. And, the client cert/key for
+`username@example.com` is in `username.crt` and `username.key`
+
+You can copy and use `ca.crt` and user's cert/key to `gotun` config directory
+and refer to it in the config file under "client-ca" and "tls.cert",
+"tls.key" respectively.
 
 ## Security
 `gotun` tries to be safe by default:
