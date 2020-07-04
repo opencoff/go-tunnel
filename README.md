@@ -231,7 +231,7 @@ an example for SNI configured on listen address `127.0.0.1:9443`.
 ## Generating Local Certificates
 If you want client authentication and don't want the hassle of using
 openssl or a commercial CA for obtaining the certs, you can use
-[certik]((https://github.com/opencoff/certik) to create an easy,
+[certik](https://github.com/opencoff/certik) to create an easy,
 opinionated local CA infrastucture. Assuming you are on a
 linux-amd64 platform:
 
