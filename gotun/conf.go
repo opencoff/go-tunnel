@@ -52,8 +52,9 @@ type ListenConf struct {
 }
 
 type RateLimit struct {
-	Global  int `yaml:"global"`
-	PerHost int `yaml:"perhost"`
+	Global    int `yaml:"global"`
+	PerHost   int `yaml:"per-host"`
+	CacheSize int `yaml:"cache-size"`
 }
 
 // An IP/Subnet
@@ -72,22 +73,25 @@ type Timeouts struct {
 type ConnectConf struct {
 	Addr          string `yaml:"address"`
 	Bind          string
-	ProxyProtocol string
+	ProxyProtocol string         `yaml:"proxy-protocol"`
 	Quic          bool           `yaml:"quic"`
 	Tls           *TlsClientConf `yaml:"tls"`
 }
 
 // Tls Conf
 type TlsServerConf struct {
-	Quic       bool
+	Quic bool
+
+	// this is the name of a directory where we look for $SERVER.crt
+	// where $SERVER is in the handshake message
 	Sni        string
 	Cert       string
 	Key        string
-	ClientCert string
+	ClientCert string `yaml:"client-cert"`
 
 	// this can be a file or dir. It is needed to verify the client provided
 	// certificate.
-	ClientCA string
+	ClientCA string `yaml:"client-ca"`
 }
 
 // Tls client conf
@@ -121,11 +125,11 @@ func ReadYAML(fn string) (*Conf, error) {
 	if err = validate(&cfg); err != nil {
 		return nil, err
 	}
-	return defaults(&cfg), nil
+	return ConfDefaults(&cfg), nil
 }
 
 // Setup sane defaults if needed
-func defaults(c *Conf) *Conf {
+func ConfDefaults(c *Conf) *Conf {
 	for _, l := range c.Listen {
 		if l.Ratelimit == nil {
 			l.Ratelimit = &RateLimit{}
@@ -136,6 +140,11 @@ func defaults(c *Conf) *Conf {
 		if l.Ratelimit.PerHost <= 0 {
 			l.Ratelimit.PerHost = 10
 		}
+
+		if l.Ratelimit.CacheSize <= 0 {
+			l.Ratelimit.CacheSize = 5000
+		}
+
 		t := &l.Timeout
 		if t.Connect == 0 {
 			t.Connect = 5
@@ -244,6 +253,10 @@ func (lc *ListenConf) IsQuic() bool {
 
 func (tc *ConnectConf) IsQuic() bool {
 	return tc.Tls != nil && tc.Quic
+}
+
+func (tc *ConnectConf) IsSocks() bool {
+	return strings.ToUpper(tc.Addr) == "SOCKS"
 }
 
 // parse TLS server config
@@ -381,7 +394,7 @@ func (c *Conf) ReadCA(nm string) *x509.CertPool {
 	for i := range fdv {
 		fd := fdv[i]
 		fn := fd.Name()
-		if !strings.HasSuffix(fn, ".pem") {
+		if !strings.HasSuffix(fn, ".pem") || !strings.HasSuffix(fn, ".crt") {
 			fd.Close()
 			continue
 		}

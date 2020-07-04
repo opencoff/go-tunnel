@@ -28,7 +28,7 @@ var Buildtime string = "UNDEFINED"
 var ProductVersion string = "UNDEFINED"
 
 // Network I/O buffer size
-var BufSize uint = 65536
+var IOSize uint64 = 65536
 
 // Number of minutes of profile data to capture
 // XXX Where should this be set? Config file??
@@ -49,7 +49,7 @@ func main() {
 
 	debugFlag := flag.BoolP("debug", "d", false, "Run in debug mode")
 	verFlag := flag.BoolP("version", "v", false, "Show version info and quit")
-	flag.UintVarP(&BufSize, "io-bufsize", "B", BufSize, "Set network I/O buffer size to `b` bytes")
+	flag.SizeVarP(&IOSize, "iobuf-size", "B", IOSize, "Set network I/O buffer size to `b` bytes")
 
 	usage := fmt.Sprintf("%s [options] config-file", os.Args[0])
 
@@ -103,8 +103,6 @@ func main() {
 
 	log.Info("gotun - %s [%s - built on %s] starting up (logging at %s)...",
 		ProductVersion, RepoVersion, Buildtime, log.Prio())
-
-	cfg.Dump(log)
 
 	if len(cfg.Listen) == 0 {
 		die("%s: no listeners in config file", cfgfile)

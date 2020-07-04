@@ -32,7 +32,7 @@ func quicSetup(lport, cport int) *Conf {
 		Listen:  []*ListenConf{lc},
 	}
 
-	return defaults(c)
+	return ConfDefaults(c)
 }
 
 // Client -> gotun Quic

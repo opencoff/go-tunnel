@@ -45,7 +45,7 @@ func (t *tcpDialer) Dial(network string, addr string, lhs Conn, ctx context.Cont
 		return nil, fmt.Errorf("can't dial %s: %w", addr, err)
 	}
 
-	t.log.Debug("%s connected to  %s", peer.LocalAddr().String(), addr)
+	t.log.Debug("%s connected to %s", peer.LocalAddr().String(), addr)
 	if t.r.clientTls != nil {
 		econn := tls.Client(peer, t.r.clientTls)
 		err := econn.Handshake()
@@ -55,7 +55,7 @@ func (t *tcpDialer) Dial(network string, addr string, lhs Conn, ctx context.Cont
 		}
 
 		st := econn.ConnectionState()
-		t.log.Debug("tls client handshake with %s complete; Version %#x, Cipher %#x", addr,
+		t.log.Debug("connection %s updgraded to TLS; Version %#x, Cipher %#x", addr,
 			st.Version, st.CipherSuite)
 		peer = econn
 	}
@@ -69,7 +69,9 @@ func (t *tcpDialer) Dial(network string, addr string, lhs Conn, ctx context.Cont
 			a2.Network(), a1.IP.String(), a2.IP.String(), a1.Port, a2.Port)
 		peer.Write([]byte(s))
 	default:
-		t.r.log.Debug("%s: no support for PROXY Protocol %s", addr, t.r.Connect.ProxyProtocol)
+		if len(t.r.Connect.ProxyProtocol) > 0 {
+			t.r.log.Debug("%s: no support for PROXY Protocol %s", addr, t.r.Connect.ProxyProtocol)
+		}
 	}
 
 	return peer, nil

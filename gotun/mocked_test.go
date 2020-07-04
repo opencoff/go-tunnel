@@ -17,6 +17,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -89,10 +90,10 @@ func (s *tcpserver) accept() {
 }
 
 func (s *tcpserver) relay(fd net.Conn) {
-	there := fd.LocalAddr().String()
+	there := fd.RemoteAddr().String()
 	assert := newAsserter(s.t)
 	done := s.ctx.Done()
-	from := fmt.Sprintf("%s--%s", there, fd.RemoteAddr().String())
+	from := fmt.Sprintf("%s--%s", there, fd.LocalAddr().String())
 
 	defer func() {
 		s.wg.Done()
@@ -120,7 +121,7 @@ func (s *tcpserver) relay(fd net.Conn) {
 	h := sha256.New()
 	for i := 0; ; i++ {
 		fd.SetReadDeadline(time.Now().Add(rto))
-		nr, err := readfull(fd, buf)
+		nr, err := ReadAll(fd, buf)
 		select {
 		case <-done:
 			return
@@ -140,7 +141,7 @@ func (s *tcpserver) relay(fd net.Conn) {
 
 		//s.t.Logf("%s: %d: RX %d [%x]\n", from, i, nr, sum[:])
 		fd.SetWriteDeadline(time.Now().Add(rto))
-		nw, err := writefull(fd, sum[:])
+		nw, err := WriteAll(fd, sum[:])
 		select {
 		case <-done:
 			return
@@ -236,7 +237,7 @@ func (c *tcpclient) loop(n int) error {
 
 	h := sha256.New()
 	for i := 0; i < n; i++ {
-		nw, err := writefull(fd, buf)
+		nw, err := WriteAll(fd, buf)
 		select {
 		case <-done:
 			return nil
@@ -253,7 +254,7 @@ func (c *tcpclient) loop(n int) error {
 
 		//c.t.Logf("%s: %d: TX %d [%x]\n", from, i, nw, suma[:])
 
-		nr, err := readfull(fd, sumr[:])
+		nr, err := ReadAll(fd, sumr[:])
 		select {
 		case <-done:
 			return nil
@@ -273,39 +274,6 @@ func (c *tcpclient) loop(n int) error {
 		//c.t.Logf("%s: TX %d, RX %d\n", addr, nw, len(sumr[:]))
 	}
 	return nil
-}
-
-func writefull(fd io.Writer, b []byte) (int, error) {
-	var z int
-	n := len(b)
-	for n > 0 {
-		nw, err := fd.Write(b)
-		if err != nil {
-			return z, err
-		}
-
-		n -= nw
-		z += nw
-		b = b[nw:]
-	}
-
-	return z, nil
-}
-
-func readfull(fd io.Reader, b []byte) (int, error) {
-	var z int
-	n := len(b)
-	for n > 0 {
-		nr, err := fd.Read(b)
-		if err != nil {
-			return z, err
-		}
-
-		n -= nr
-		z += nr
-		b = b[nr:]
-	}
-	return z, nil
 }
 
 type quicserver struct {
@@ -419,7 +387,7 @@ func (q *quicserver) relay(fd *qconn) {
 	h := sha256.New()
 	for i := 0; ; i++ {
 		fd.SetReadDeadline(time.Now().Add(rto))
-		nr, err := readfull(fd, buf)
+		nr, err := ReadAll(fd, buf)
 		select {
 		case <-done:
 			return
@@ -439,7 +407,7 @@ func (q *quicserver) relay(fd *qconn) {
 
 		//q.t.Logf("%s: %d: RX %d [%x]\n", from, i, nr, sum[:])
 		fd.SetWriteDeadline(time.Now().Add(rto))
-		nw, err := writefull(fd, sum[:])
+		nw, err := WriteAll(fd, sum[:])
 		select {
 		case <-done:
 			return
@@ -539,7 +507,7 @@ func (q *quicclient) start(n int) {
 
 	h := sha256.New()
 	for i := 0; i < n; i++ {
-		nw, err := writefull(fd, buf)
+		nw, err := WriteAll(fd, buf)
 		select {
 		case <-done:
 			return
@@ -556,7 +524,7 @@ func (q *quicclient) start(n int) {
 
 		//c.t.Logf("%s: %d: TX %d [%x]\n", from, i, nw, suma[:])
 
-		nr, err := readfull(fd, sumr[:])
+		nr, err := ReadAll(fd, sumr[:])
 		select {
 		case <-done:
 			return
@@ -581,6 +549,135 @@ func (q *quicclient) start(n int) {
 func (q *quicclient) stop() {
 	q.cancel()
 	q.Close()
+}
+
+// socks client
+type socksclient struct {
+	*tcpclient
+
+	dstnet  string
+	dstaddr string
+}
+
+func newSocksClient(addr string, dstnet, dstaddr string, t *testing.T) *socksclient {
+	tcp := newTcpClient("tcp", addr, nil, t)
+	s := &socksclient{
+		tcpclient: tcp,
+		dstnet:    dstnet,
+		dstaddr:   dstaddr,
+	}
+	return s
+}
+
+func (s *socksclient) start(n int) error {
+	var err error
+	dial := &net.Dialer{
+		Timeout: 1 * time.Second,
+	}
+
+	s.Conn, err = dial.DialContext(s.ctx, s.network, s.addr)
+	if err != nil {
+		return err
+	}
+
+	s.t.Logf("mock socks client: %s connected to %s\n", s.LocalAddr().String(), s.addr)
+	err = s.dosocks()
+	if err != nil {
+		return err
+	}
+
+	return s.tcpclient.loop(n)
+}
+
+func (s *socksclient) stop() {
+	s.tcpclient.stop()
+}
+
+func (s *socksclient) dosocks() error {
+	var buf [512]byte
+	var err error
+
+	assert := newAsserter(s.t)
+	buf[0] = 0x5
+	buf[1] = 0x0
+
+	_, err = WriteAll(s, buf[:2])
+	if err != nil {
+		return err
+	}
+
+	// auth response is exactly two bytes
+	_, err = ReadAll(s, buf[:2])
+	if err != nil {
+		return err
+	}
+
+	// now write the connecting info
+	buf[0] = 0x5
+	buf[1] = 0x1 // connect
+	buf[2] = 0x0 // resv
+
+	host, sport, err := net.SplitHostPort(s.dstaddr)
+	if err != nil {
+		return err
+	}
+
+	port, err := strconv.ParseUint(sport, 10, 16)
+	if err != nil {
+		return err
+	}
+
+	n := 4
+	addr := buf[4:]
+	ip := net.ParseIP(host)
+	if ip == nil {
+		assert(len(host) < 255, "socks dest addr too long (%d)", len(host))
+
+		buf[3] = 0x3 // domain name
+		buf[4] = byte(len(host))
+		addr := buf[5:]
+		copy(addr, []byte(host))
+		n += 1 + int(buf[4])
+	} else {
+		if ip4 := ip.To4(); ip4 != nil {
+			n += 4
+			buf[3] = 0x1
+			copy(addr, ip4)
+		} else {
+			n += 16
+			buf[3] = 0x4
+			copy(addr, ip)
+		}
+	}
+	switch s.dstnet {
+	case "udp", "udp4", "udp6":
+		buf[1] = 0x3
+	default:
+	}
+
+	buf[n] = byte(port >> 8)
+	buf[n+1] = byte(port & 0xff)
+	n += 2
+
+	_, err = WriteAll(s, buf[:n])
+	if err != nil {
+		return err
+	}
+
+	// finally read response (n bytes)
+	nr, err := s.Read(buf[:])
+	if err != nil {
+		return err
+	}
+
+	if nr < 2 {
+		return fmt.Errorf("socks: reply too small (%d bytes)", nr)
+	}
+
+	if buf[1] != 0x0 {
+		return fmt.Errorf("socks: Server error: %#x", buf[1])
+	}
+	return nil
 }
 
 type pki struct {

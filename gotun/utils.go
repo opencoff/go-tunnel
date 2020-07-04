@@ -10,6 +10,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"syscall"
@@ -26,6 +27,41 @@ func isReset(err error) bool {
 		}
 	}
 	return false
+}
+
+// Write all bytes in 'b' and return err
+func WriteAll(fd io.Writer, b []byte) (int, error) {
+	var z int
+	n := len(b)
+	for n > 0 {
+		nw, err := fd.Write(b)
+		if err != nil {
+			return z, err
+		}
+
+		n -= nw
+		z += nw
+		b = b[nw:]
+	}
+
+	return z, nil
+}
+
+// Read upto len(b) bytes from fd
+func ReadAll(fd io.Reader, b []byte) (int, error) {
+	var z int
+	n := len(b)
+	for n > 0 {
+		nr, err := fd.Read(b)
+		if err != nil {
+			return z, err
+		}
+
+		n -= nr
+		z += nr
+		b = b[nr:]
+	}
+	return z, nil
 }
 
 // Format a time duration

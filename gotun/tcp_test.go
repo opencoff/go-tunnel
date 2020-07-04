@@ -31,12 +31,12 @@ func testSetup(lport, cport int) *Conf {
 		Listen:  []*ListenConf{lc},
 	}
 
-	return defaults(c)
+	return ConfDefaults(c)
 }
 
 // Client -> gotun TCP
 // gotun -> backend TCP
-func TestTcpToTcp(t *testing.T) {
+func TestTcpToTls(t *testing.T) {
 	assert := newAsserter(t)
 
 	// create a logger
@@ -108,7 +108,7 @@ func TestTcpToTcp(t *testing.T) {
 	log.Close()
 }
 
-func TestTcpToTls(t *testing.T) {
+func TestTcpToTcp(t *testing.T) {
 	assert := newAsserter(t)
 
 	// create a logger

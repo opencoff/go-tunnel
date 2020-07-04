@@ -11,11 +11,13 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	//"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,7 +103,7 @@ func NewServer(lc *ListenConf, c *Conf, log *L.Logger) Proxy {
 	log = log.New(addr, 0)
 
 	// Conf file specifies ratelimit as N conns/sec
-	rl, err := ratelimit.New(lc.Ratelimit.Global, lc.Ratelimit.PerHost, 10000)
+	rl, err := ratelimit.New(lc.Ratelimit.Global, lc.Ratelimit.PerHost, lc.Ratelimit.CacheSize)
 	if err != nil {
 		die("%s: Can't create ratelimiter: %s", addr, err)
 	}
@@ -117,8 +119,10 @@ func NewServer(lc *ListenConf, c *Conf, log *L.Logger) Proxy {
 		ctx:        ctx,
 		cancel:     cancel,
 		activeConn: make(map[string]*relay),
+
+		// IOSize is a global in main; it can be changed via command line flag
 		pool: &sync.Pool{
-			New: func() interface{} { return make([]byte, BufSize) },
+			New: func() interface{} { return make([]byte, IOSize) },
 		},
 		rl: rl,
 	}
@@ -393,29 +397,67 @@ func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
 		conn.Close()
 	}()
 
-	peer, err := p.dial.Dial(p.dialnet, p.Connect.Addr, conn, ctx)
+	var err error
+	var network, addr string
+	var nr int
+
+	b0 := p.getBuf()
+	addr = p.Connect.Addr
+	network = p.dialnet
+	socks := p.Connect.IsSocks()
+
+	if socks {
+		network, addr, nr, err = p.socks(conn, b0, log)
+		if err != nil {
+			return
+		}
+	}
+
+	peer, err := p.dial.Dial(network, addr, conn, ctx)
 	if err != nil {
-		log.Warn("can't connect to %s: %s", p.Connect.Addr, err)
+		log.Warn("can't connect to %s: %s", addr, err)
+
+		// send error message or success to client
+		// buffer b0 is still intact
+		if socks {
+			b0[1] = 0x4 // XXX generic error
+			WriteAll(conn, b0[:nr])
+		}
 		return
+	}
+
+	if socks {
+		b0[1] = 0x0
+		_, err = WriteAll(conn, b0[:nr])
+		select {
+		case <-p.ctx.Done():
+			return
+		default:
+		}
+		if err != nil {
+			log.Warn("can't write socks response: %s", err)
+			return
+		}
 	}
 
 	defer peer.Close()
 
 	// we grab the printable info before the socket is closed
-	lhs_theirs := conn.RemoteAddr().String()
-	rhs_theirs := peer.RemoteAddr().String()
-	inbound := fmt.Sprintf("%s-%s", conn.LocalAddr().String(), lhs_theirs)
-	outbound := fmt.Sprintf("%s-%s", peer.LocalAddr().String(), rhs_theirs)
+	lhs_there := conn.LocalAddr().String()
+	lhs_here := conn.RemoteAddr().String()
+	rhs_here := peer.LocalAddr().String()
+	rhs_there := peer.RemoteAddr().String()
+	inbound := fmt.Sprintf("%s-%s", lhs_here, lhs_there)
+	outbound := fmt.Sprintf("%s-%s", rhs_here, rhs_there)
 
 	// we really need to log this in the parent logger
 	p.log.Debug("LHS %s, RHS %s", inbound, outbound)
 
 	// create a child logger anchored to the remote-addr
-	log = log.New(rhs_theirs, 0)
+	log = log.New(outbound, 0)
 
 	var wg sync.WaitGroup
 
-	b0 := p.getBuf()
 	b1 := p.getBuf()
 
 	wg.Add(2)
@@ -446,7 +488,155 @@ func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
 	p.putBuf(b0)
 	p.putBuf(b1)
 
-	log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", lhs_theirs, r1, w0, rhs_theirs, r0, w1)
+	log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", inbound, r1, w0, outbound, r0, w1)
+}
+
+// Negotiate socksv5 with peer 'fd' and return endpoints to dial
+func (p *Server) socks(fd Conn, buf []byte, log *L.Logger) (network, addr string, nr int, err error) {
+
+	done := p.ctx.Done()
+	// Socksv5 state machine:
+	// 1. Read Methods
+	// 2. Write Method Response
+	// 3. Read ConnInfo
+	// 4. Write Conn Response
+
+	n, err := fd.Read(buf)
+	select {
+	case <-done:
+		err = errShutdown
+		return
+	default:
+	}
+	if err != nil {
+		log.Warn("unable to read Socks version info: %s", err)
+		return
+	}
+
+	if n < 2 {
+		log.Warn("insufficient socks method info (exp at least 2, saw %d)", n)
+		err = errMsgTooSmall
+		return
+	}
+
+	if buf[0] != 0x5 {
+		log.Warn("unsupported socks version %d", buf[0])
+		err = errUnsupportedSocksVer
+		return
+	}
+
+	// so, we write a hard-coded response saying "no auth needed"
+	buf[1] = 0
+	_, err = WriteAll(fd, buf[:2])
+	select {
+	case <-done:
+		err = errShutdown
+		return
+	default:
+	}
+	if err != nil {
+		log.Warn("unable to write socks greeting: %s", err)
+		return
+	}
+
+	// next read conn setup info
+	n, err = fd.Read(buf)
+	select {
+	case <-done:
+		err = errShutdown
+		return
+	default:
+	}
+	if err != nil {
+		log.Warn("unable to read socks connect info: %s", err)
+		return
+	}
+
+	// minimum size is 10 bytes:
+	//  0: ver
+	//  1: cmd
+	//  2: resv
+	//  3: atype
+	//  4-7: IPv4 addr
+	//  8-9: port
+	if n < 10 {
+		log.Warn("insufficient socks method info (exp at least 10, saw %d)", n)
+		err = errMsgTooSmall
+		return
+	}
+
+	//log.Debug("socks-connect: %d bytes\n%s", n, hex.Dump(buf[:n]))
+
+	nr = n
+	switch buf[1] {
+	case 0x1:
+		network = "tcp"
+	case 0x2:
+		log.Warn("unsupported 'bind' type for socks")
+		err = errUnsupportedMethod
+		return
+	case 0x3:
+		network = "udp"
+	}
+
+	// buf[2] is Reserved
+
+	// we've consumed 4 bytes so far
+	n -= 4
+
+	want := 0
+	daddr := buf[4:]
+
+	// Now connecting dest addr & port
+	switch buf[3] {
+	case 0x1: // ipv4 address
+		want = 4
+	case 0x3: // fqdn; first octet is length
+		want = int(buf[4])
+		daddr = buf[5:]
+
+	case 0x4: // ipv6 addr
+		want = 16
+
+	default:
+		log.Warn("unknown socks addr type %#x", buf[3])
+		err = errUnsupportedAddr
+		return
+	}
+
+	// we must have enough bytes for addr:port
+	if n < (want + 2) {
+		log.Warn("insufficient socks method info (exp at least %d, saw %d)", want+2, n)
+		err = errMsgTooSmall
+		return
+	}
+
+	port := daddr[want:]
+	switch buf[3] {
+	case 0x1:
+		addr = fmt.Sprintf("%d.%d.%d.%d", daddr[0], daddr[1], daddr[2], daddr[3])
+	case 0x3:
+		var s strings.Builder
+		for i := 0; i < want; i++ {
+			s.WriteByte(daddr[i])
+		}
+		addr = s.String()
+	case 0x4:
+		var s strings.Builder
+		s.WriteString(fmt.Sprintf("[%02x", daddr[0]))
+		for i := 1; i < want; i++ {
+			s.WriteString(fmt.Sprintf(":%02x", daddr[i]))
+		}
+		s.WriteRune(']')
+		addr = s.String()
+	}
+
+	iport := (uint16(port[0]) << 8) + uint16(port[1])
+	addr = fmt.Sprintf("%s:%d", addr, iport)
+	err = nil
+
+	log.Debug("socks: connecting to %s/%s", network, addr)
+	return
 }
 
 func (p *Server) getBuf() []byte {
@@ -455,6 +645,8 @@ func (p *Server) getBuf() []byte {
 }
 
 func (p *Server) putBuf(b []byte) {
+	// resize before putting it back
+	b = b[:cap(b)]
 	p.pool.Put(b)
 }
 
@@ -486,7 +678,7 @@ func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log
 		case nr > 0:
 			d.SetWriteDeadline(time.Now().Add(wto))
 			x += nr
-			nw, err := d.Write(buf[:nr])
+			nw, err := WriteAll(d, buf[:nr])
 			select {
 			case <-done:
 				return
@@ -504,68 +696,6 @@ func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log
 		}
 		if err != nil {
 			log.Debug("%s: read error: %s", s.RemoteAddr().String(), err)
-			return
-		}
-	}
-}
-
-/*
-// interruptible copy
-func (p *Server) xcancellableCopy(d, s Conn, buf []byte, ctx context.Context, log *L.Logger) (r, w int) {
-
-	ch := make(chan bool)
-	go func() {
-		r, w = p.copyBuf(d, s, buf, log)
-		close(ch)
-	}()
-
-	select {
-	case <-ch:
-
-	case <-ctx.Done():
-		// This forces both copy go-routines to end the for{} loops.
-		log.Debug("SHUTDOWN: Force closing %s and %s",
-			d.RemoteAddr().String(), s.LocalAddr().String())
-		d.Close()
-		s.Close()
-	}
-
-	return
-}
-
-// copy from 's' to 'd' using 'buf'
-func (p *Server) xcopyBuf(d, s Conn, buf []byte, log *L.Logger) (x, y int) {
-	rto := time.Duration(p.Timeout.Read) * time.Second
-	wto := time.Duration(p.Timeout.Write) * time.Second
-	for {
-		s.SetReadDeadline(time.Now().Add(rto))
-		nr, err := s.Read(buf)
-		if err != nil {
-			if err != io.EOF && err != context.Canceled && !isReset(err) {
-				log.Debug("%s: nr %d, read err %s", s.LocalAddr().String(), nr, err)
-				return
-			}
-		}
-
-		if nr > 0 {
-			d.SetWriteDeadline(time.Now().Add(wto))
-			x += nr
-			nw, err := d.Write(buf[:nr])
-			if err != nil {
-				log.Debug("%s: Write Err %s", d.RemoteAddr().String(), err)
-				return
-			}
-			if nw != nr {
-				return
-			}
-			y += nw
-		}
-		if err != nil {
-			log.Debug("%s: read error: %s", s.RemoteAddr().String(), err)
-			return
-		}
-		if nr == 0 {
-			log.Debug("%s: EOF", s.RemoteAddr().String())
 			return
 		}
 	}
@@ -598,37 +728,38 @@ func (p *TCPServer) Accept() (net.Conn, error) {
 			return nil, err
 		}
 
+		there := nc.RemoteAddr()
+
 		// First enforce a global ratelimit
 		if !p.rl.Allow() {
-			p.log.Debug("global ratelimit reached: %s", nc.RemoteAddr().String())
+			p.log.Debug("global ratelimit reached: %s", there)
 			nc.Close()
 			continue
 		}
 
 		// Then a per-host ratelimit
-		if !p.rl.AllowHost(nc.RemoteAddr()) {
-			p.log.Debug("per-host ratelimit reached: %s", nc.RemoteAddr().String())
+		if !p.rl.AllowHost(there) {
+			p.log.Debug("per-host ratelimit reached: %s", there)
 			nc.Close()
 			continue
 		}
 
 		if !AclOK(p.ListenConf, nc) {
-			p.log.Debug("ACL failure: %s", nc.RemoteAddr().String())
+			p.log.Debug("ACL failure: %s", there)
 			nc.Close()
 			continue
 		}
 
-		p.log.Debug("Accepted new connection from %s", nc.RemoteAddr().String())
+		p.log.Debug("Accepted new connection from %s", there)
 		return nc, nil
 	}
 }
-*/
 
 func (s *Server) getSNIHandler(dir string, log *L.Logger) func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	conf := s.conf
 	dir = conf.Path(dir)
 	if !isdir(dir) {
-		die("%s: certdir %s is not a directory?", s.Addr, dir)
+		die("%s: SNI %s is not a directory?", s.Addr, dir)
 	}
 
 	fp := func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
@@ -676,6 +807,12 @@ var (
 	errNoCert    = errors.New("SNI: no cert/key for name")
 	errNoCACerts = errors.New("TLS: no CA certs found")
 	errShutdown  = errors.New("server shutdown")
+
+	// socks errors
+	errMsgTooSmall         = errors.New("socks: message too small")
+	errUnsupportedMethod   = errors.New("socks: unsupported method")
+	errUnsupportedAddr     = errors.New("socks: unsupported address")
+	errUnsupportedSocksVer = errors.New("socks: unsupported version")
 )
 
 // vim: noexpandtab:ts=8:sw=8:tw=88:
