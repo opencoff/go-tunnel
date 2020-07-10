@@ -112,6 +112,7 @@ Options:
     -n, --dry-run       Dry-run, don't actually build anything [False]
     -t, --test          Run "go test" on modules named on the command line [False]
     -v, --verbose       Build verbosely (adds "-v" to go tooling) [False]
+    --print-arch        Show the current OS-ARCH for the toolchain and exit [False]
     --vet               Run "go vet" on modules named on the command line [False]
     -x                  Run in debug/trace mode [False]
 EOF
@@ -153,6 +154,7 @@ done
 Tool=
 doinit=0
 args=
+Printarch=0
 
 #set -x
 ac_prev=
@@ -214,6 +216,10 @@ do
             set -x
             ;;
 
+        --print-arch)
+            Printarch=1
+            ;;
+
         *) # first non option terminates option processing.
            # we gather all remaining args and bundle them up.
             args="$args $ac_option"
@@ -272,6 +278,11 @@ else
         ldflags="-s"
         msg="statically linked"
     fi
+fi
+
+if [ $Printarch -gt 0 ]; then
+    echo "$cross"
+    exit 0
 fi
 
 # This is where build outputs go

@@ -15,7 +15,7 @@ import (
 )
 
 // Safely open a file named in the config-file
-func (c *Conf) SafeOpenFile(fn string) (*os.File, error) {
+func (c *Conf) SafeOpenFile(fn string, secure bool) (*os.File, error) {
 
 	fn = c.Path(fn)
 	fd, err := os.Open(fn)
@@ -35,14 +35,14 @@ func (c *Conf) SafeOpenFile(fn string) (*os.File, error) {
 		return nil, fmt.Errorf("%s: not a regular file", fn)
 	}
 
-	if err = checkStat(fi, fn); err != nil {
+	if err = checkStat(fi, fn, secure); err != nil {
 		fd.Close()
 		return nil, err
 	}
 	return fd, nil
 }
 
-func (c *Conf) IsFileSafe(nm string) error {
+func (c *Conf) IsFileSafe(nm string, secure bool) error {
 	fn := c.Path(nm)
 	fi, err := os.Stat(fn)
 	if err != nil {
@@ -54,7 +54,7 @@ func (c *Conf) IsFileSafe(nm string) error {
 		return fmt.Errorf("%s: Not a file", fn)
 	}
 
-	if err = checkStat(fi, fn); err != nil {
+	if err = checkStat(fi, fn, secure); err != nil {
 		return err
 	}
 
@@ -62,7 +62,7 @@ func (c *Conf) IsFileSafe(nm string) error {
 }
 
 // Safely open a directory or file
-func (c *Conf) SafeOpen(dn string) ([]*os.File, error) {
+func (c *Conf) SafeOpen(dn string, secure bool) ([]*os.File, error) {
 	fn := c.Path(dn)
 	fd, err := os.Open(fn)
 	if err != nil {
@@ -76,13 +76,14 @@ func (c *Conf) SafeOpen(dn string) ([]*os.File, error) {
 	}
 
 	// make sure every parent is safe
-	if err = checkStat(fi, fn); err != nil {
+	if err = checkStat(fi, fn, secure); err != nil {
 		fd.Close()
 		return nil, err
 	}
 
 	m := fi.Mode()
 	if m.IsRegular() {
+		// we don't close the fd here. The caller will close it.
 		return []*os.File{fd}, nil
 	}
 
@@ -110,6 +111,11 @@ func (c *Conf) SafeOpen(dn string) ([]*os.File, error) {
 		return nil, err
 	}
 
+	var mask os.FileMode = 0022
+	if secure {
+		mask = 0066
+	}
+
 	for i := range fiv {
 		fi := fiv[i]
 		m := fi.Mode()
@@ -131,8 +137,8 @@ func (c *Conf) SafeOpen(dn string) ([]*os.File, error) {
 			return fail(err)
 		}
 		m = fi.Mode()
-		if (m & 0066) != 0 {
-			return fail(fmt.Errorf("%s: insecure perms (group/world writable)", nm))
+		if (m & mask) != 0 {
+			return fail(fmt.Errorf("%s: insecure perms (group/world read/write)", nm))
 		}
 	}
 	return files, nil
@@ -140,9 +146,14 @@ func (c *Conf) SafeOpen(dn string) ([]*os.File, error) {
 
 // check this stat result, validate it and its parent.
 // We walk all the way up to the root
-func checkStat(fi os.FileInfo, nm string) error {
+func checkStat(fi os.FileInfo, nm string, secure bool) error {
+	var mask os.FileMode = 0022
+	if secure {
+		mask = 0066
+	}
+
 	m := fi.Mode()
-	if (m & 0066) != 0 {
+	if (m & mask) != 0 {
 		return fmt.Errorf("insecure perms on %s (group/world read/write)", nm)
 	}
 
@@ -158,8 +169,8 @@ func checkStat(fi os.FileInfo, nm string) error {
 			return err
 		}
 		m = fi.Mode()
-		if (m & 0066) != 0 {
-			return fmt.Errorf("insecure perms on %s (group/world read/write)", dir)
+		if (m & 0022) != 0 {
+			return fmt.Errorf("insecure perms on %s (group/world write)", dir)
 		}
 
 		nm = dir

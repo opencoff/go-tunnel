@@ -27,7 +27,7 @@ type Conf struct {
 	LogLevel string        `yaml:"loglevel"`
 	Uid      string        `yaml:"uid"`
 	Gid      string        `yaml:"gid"`
-	ConfDir  string        `yaml: config-dir"`
+	ConfDir  string        `yaml:"config-dir"`
 	Listen   []*ListenConf `yaml:"listen"`
 }
 
@@ -38,6 +38,7 @@ type ListenConf struct {
 	Timeout Timeouts `yaml:"timeout"`
 
 	Quic bool `yaml:"quic"`
+
 	// optional TLS info; will listen on TLS socket if provided
 	Tls *TlsServerConf `yaml:"tls"`
 
@@ -88,6 +89,8 @@ type TlsServerConf struct {
 	Cert       string
 	Key        string
 	ClientCert string `yaml:"client-cert"`
+
+	Server string `yaml:"servername"`
 
 	// this can be a file or dir. It is needed to verify the client provided
 	// certificate.
@@ -178,15 +181,18 @@ func validate(conf *Conf) error {
 			return fmt.Errorf("listener %s has missing connect info", l.Addr)
 		}
 
-		i := strings.IndexByte(l.Addr, ':')
-		if i < 0 {
-			return fmt.Errorf("%s: listen address is missing port", l.Addr)
-		}
+		var nm string
+		if strings.ToUpper(c.Addr) != "SOCKS" {
+			i := strings.IndexByte(l.Addr, ':')
+			if i < 0 {
+				return fmt.Errorf("%s: listen address is missing port", l.Addr)
+			}
 
-		if i = strings.IndexByte(c.Addr, ':'); i < 0 {
-			return fmt.Errorf("%s: Connect address %s is missing port", l.Addr, c.Addr)
+			if i = strings.IndexByte(c.Addr, ':'); i < 0 {
+				return fmt.Errorf("%s: Connect address %s is missing port", l.Addr, c.Addr)
+			}
+			nm = c.Addr[:i]
 		}
-		nm := c.Addr[:i]
 
 		switch c.ProxyProtocol {
 		case "v1":
@@ -201,9 +207,11 @@ func validate(conf *Conf) error {
 			}
 			// if what we are connecting to is not an IP address, treat it as a
 			// hostname and let crypto/tls validate hostname against the cert.
-			if ip := net.ParseIP(nm); ip == nil {
-				if len(t.Server) == 0 {
+			if ip := net.ParseIP(nm); ip == nil && len(t.Server) == 0 {
+				if len(nm) > 0 {
 					t.Server = nm
+				} else {
+					warn("%s: TLS server name missing; using defaults from cert")
 				}
 			}
 		}
@@ -248,11 +256,11 @@ func validate(conf *Conf) error {
 }
 
 func (lc *ListenConf) IsQuic() bool {
-	return lc.Tls != nil && lc.Quic
+	return lc.Quic
 }
 
 func (tc *ConnectConf) IsQuic() bool {
-	return tc.Tls != nil && tc.Quic
+	return tc.Quic
 }
 
 func (tc *ConnectConf) IsSocks() bool {
@@ -263,7 +271,9 @@ func (tc *ConnectConf) IsSocks() bool {
 func (lc *ListenConf) ParseTlsServerConf(c *Conf) *tls.Config {
 	t := lc.Tls
 	cfg := &tls.Config{
-		MinVersion:             tls.VersionTLS12,
+		MinVersion: tls.VersionTLS12,
+		ServerName: t.Server,
+
 		SessionTicketsDisabled: true,
 		CipherSuites: []uint16{
 			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,   // Go 1.8 only
@@ -286,23 +296,17 @@ func (lc *ListenConf) ParseTlsServerConf(c *Conf) *tls.Config {
 
 	// We handle SNI later when we setup the server instance.
 	if len(t.Sni) == 0 {
-		crt := c.Path(t.Cert)
-		key := c.Path(t.Key)
-
-		if err := c.IsFileSafe(crt); err != nil {
-			die("insecure perms on %s! ..", crt)
-		}
-
-		if err := c.IsFileSafe(key); err != nil {
-			die("insecure perms on %s ..", key)
-		}
-
-		cert, err := tls.LoadX509KeyPair(crt, key)
+		cert, err := c.loadCertKey(t.Cert, t.Key)
 		if err != nil {
-			die("%s: can't load server cert {%s, %s}: %s", lc.Addr, t.Cert, t.Key, err)
+			die("%s", err)
 		}
 
-		cfg.Certificates = []tls.Certificate{cert}
+		cfg.Certificates = []tls.Certificate{*cert}
+
+		if len(cfg.ServerName) == 0 {
+			x := cert.Leaf
+			cfg.ServerName = x.DNSNames[0]
+		}
 	}
 
 	needCA := true
@@ -358,23 +362,12 @@ func (lc *ListenConf) ParseTlsClientConf(c *Conf) *tls.Config {
 		die("%s: can't load TLS client CA from %s: %s", lc.Addr, t.Ca, err)
 	}
 
-	crt := c.Path(t.Cert)
-	key := c.Path(t.Key)
-
-	if err := c.IsFileSafe(crt); err != nil {
-		die("insecure perms on %s! ..", crt)
-	}
-
-	if err := c.IsFileSafe(key); err != nil {
-		die("insecure perms on %s ..", key)
-	}
-
-	cert, err := tls.LoadX509KeyPair(crt, key)
+	cert, err := c.loadCertKey(t.Cert, t.Key)
 	if err != nil {
-		die("%s: can't load TLS client cert/key {%s, %s}: %s", lc.Addr, crt, key, err)
+		die("%s", err)
 	}
 
-	cfg.Certificates = []tls.Certificate{cert}
+	cfg.Certificates = []tls.Certificate{*cert}
 	if len(cfg.ServerName) == 0 {
 		warn("TLS Client towards %s has no server-name; UNABLE TO VERIFY server presented cert", lc.Connect.Addr)
 		cfg.InsecureSkipVerify = true
@@ -383,9 +376,9 @@ func (lc *ListenConf) ParseTlsClientConf(c *Conf) *tls.Config {
 	return cfg
 }
 
+// Safely read the CA file/dir from 'nm'
 func (c *Conf) ReadCA(nm string) *x509.CertPool {
-	nm = c.Path(nm)
-	fdv, err := c.SafeOpen(nm)
+	fdv, err := c.SafeOpen(nm, false)
 	if err != nil {
 		die("can't read %s: %s", nm, err)
 	}
@@ -394,7 +387,7 @@ func (c *Conf) ReadCA(nm string) *x509.CertPool {
 	for i := range fdv {
 		fd := fdv[i]
 		fn := fd.Name()
-		if !strings.HasSuffix(fn, ".pem") || !strings.HasSuffix(fn, ".crt") {
+		if !strings.HasSuffix(fn, ".pem") && !strings.HasSuffix(fn, ".crt") {
 			fd.Close()
 			continue
 		}
@@ -415,6 +408,38 @@ func (c *Conf) ReadCA(nm string) *x509.CertPool {
 	}
 
 	return p
+}
+
+// Safely load a cert/key pair
+func (c *Conf) loadCertKey(certfile, keyfile string) (*tls.Certificate, error) {
+	cfd, err := c.SafeOpenFile(certfile, false)
+	if err != nil {
+		return nil, err
+	}
+
+	defer cfd.Close()
+
+	kfd, err := c.SafeOpenFile(keyfile, true)
+	if err != nil {
+		return nil, err
+	}
+	defer kfd.Close()
+
+	crt, err := ioutil.ReadAll(cfd)
+	if err != nil {
+		return nil, fmt.Errorf("can't read %s: %w", certfile, err)
+	}
+
+	key, err := ioutil.ReadAll(kfd)
+	if err != nil {
+		return nil, fmt.Errorf("can't read %s: %w", certfile, err)
+	}
+
+	cert, err := tls.X509KeyPair(crt, key)
+	if err != nil {
+		return nil, fmt.Errorf("can't load cert/key {%s, %s}: %w", certfile, keyfile, err)
+	}
+	return &cert, nil
 }
 
 // Custom unmarshaler for IPNet
@@ -453,14 +478,14 @@ func (c *Conf) Dump(w io.Writer) {
 
 	for _, l := range c.Listen {
 		fmt.Fprintf(b, "listen on %s", l.Addr)
-		if l.Quic {
+		if l.IsQuic() {
 			fmt.Fprintf(b, " quic")
 		}
 		if t := l.Tls; t != nil {
 			if len(t.Sni) > 0 {
-				fmt.Fprintf(b, " bith tls sni using certstore %s", t.Sni)
+				fmt.Fprintf(b, " with tls sni using certstore %s", t.Sni)
 			} else {
-				fmt.Fprintf(b, " bith tls using cert %s, key %s",
+				fmt.Fprintf(b, " with tls using cert %s, key %s",
 					t.Cert, t.Key)
 			}
 			if t.ClientCert == "required" {

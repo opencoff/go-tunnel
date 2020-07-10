@@ -61,17 +61,10 @@ func (q *quicDialer) Dial(network, addr string, _ Conn, ctx context.Context) (Co
 	q.Lock()
 	d, ok := q.dest[key]
 	if !ok {
-		/*
-			conn, err := net.ListenPacket(net, addr)
-			if err != nil {
-				q.Unlock()
-				q.log.Warn("quic: can't listen %s: %s", addr, err)
-				return nil, fmt.Sprintf("quic: %s: %w", addr, err)
-			}
-		*/
-
-		// XXX Do we need to setup a quic Config?
-		d, err = quic.DialAddrContext(ctx, addr, q.r.clientTls, &quic.Config{})
+		qcfg := &quic.Config{
+			KeepAlive: true,
+		}
+		d, err = quic.DialAddrContext(ctx, addr, q.r.clientTls, qcfg)
 		if err != nil {
 			q.Unlock()
 

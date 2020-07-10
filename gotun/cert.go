@@ -27,6 +27,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"strings"
 )
@@ -37,12 +38,12 @@ import (
 // may contain intermediate certificates following the leaf certificate to
 // form a certificate chain. On successful return, Certificate.Leaf will
 // be nil because the parsed form of the certificate is not retained.
-func LoadX509KeyPair(certFile, keyFile, passwd string) (tls.Certificate, error) {
-	certBytes, err := ioutil.ReadFile(certFile)
+func LoadX509KeyPair(certFile, keyFile io.Reader, passwd string) (tls.Certificate, error) {
+	certBytes, err := ioutil.ReadAll(certFile)
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	keyBytes, err := ioutil.ReadFile(keyFile)
+	keyBytes, err := ioutil.ReadAll(keyFile)
 	if err != nil {
 		return tls.Certificate{}, err
 	}

@@ -131,7 +131,7 @@ func NewServer(lc *ListenConf, c *Conf, log *L.Logger) Proxy {
 		s.tls.GetCertificate = s.getSNIHandler(t.Sni, log)
 	}
 
-	if lc.Connect.Quic {
+	if lc.Connect.IsQuic() {
 		q, err := newQuicDialer(s, log)
 		if err != nil {
 			die("can't create quic dialer: %s", err)
@@ -197,7 +197,11 @@ func (s *Server) newQuicServer() Proxy {
 
 	// XXX do we verify ServerName?
 
-	q, err := quic.Listen(ln, s.tls, &quic.Config{})
+	qcfg := &quic.Config{
+		KeepAlive: true,
+	}
+
+	q, err := quic.Listen(ln, s.tls, qcfg)
 	if err != nil {
 		die("can't start quic listener on %s: %s", addr, err)
 	}
@@ -766,24 +770,14 @@ func (s *Server) getSNIHandler(dir string, log *L.Logger) func(h *tls.ClientHell
 		crt := path.Join(dir, h.ServerName, ".crt")
 		key := path.Join(dir, h.ServerName, ".key")
 
-		if err := conf.IsFileSafe(crt); err != nil {
-			log.Warn("insecure perms on %s, skipping ..", crt)
-			return nil, fmt.Errorf("%s: %w", crt, errNoCert)
-		}
-
-		if err := conf.IsFileSafe(key); err != nil {
-			log.Warn("insecure perms on %s, skipping ..", key)
-			return nil, fmt.Errorf("%s: %w", key, errNoCert)
-		}
-
-		// XXX Toctou -- ideally we want to send opened file handles
-		cert, err := tls.LoadX509KeyPair(crt, key)
+		cert, err := conf.loadCertKey(crt, key)
 		if err != nil {
-			return nil, err
+			log.Warn("%s", err)
+			return nil, fmt.Errorf("%s: %w", h.ServerName, err)
 		}
 
 		log.Debug("SNI: %s -> {%s, %s}", h.ServerName, crt, key)
-		return &cert, nil
+		return cert, nil
 	}
 
 	return fp
