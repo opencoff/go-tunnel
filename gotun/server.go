@@ -268,6 +268,7 @@ func (p *QuicServer) Stop() {
 func (p *TCPServer) serveTCP() {
 	n := 0
 	done := p.ctx.Done()
+	defer p.Close()
 	for {
 		conn, err := p.Accept()
 		select {
@@ -300,6 +301,7 @@ func (p *TCPServer) serveTCP() {
 func (p *QuicServer) serveQuic() {
 	n := 0
 	done := p.ctx.Done()
+	defer p.Close()
 	for {
 		p.rl.Wait(p.ctx)
 		sess, err := p.Accept(p.ctx)
@@ -321,8 +323,17 @@ func (p *QuicServer) serveQuic() {
 			continue
 		}
 
+		there := sess.RemoteAddr()
+
 		// wait for per-host ratelimiter
-		p.rl.WaitHost(p.ctx, sess.RemoteAddr())
+		p.rl.WaitHost(p.ctx, there)
+
+		// Check ACLs only after we have ratelimited inbound conns
+		if !AclOK(p.ListenConf, there) {
+			p.log.Debug("ACL failure: %s", there)
+			sess.CloseWithError(401, "Not authorized")
+			continue
+		}
 
 		n = 0
 		p.wg.Add(1)
@@ -748,7 +759,7 @@ func (p *TCPServer) Accept() (net.Conn, error) {
 			continue
 		}
 
-		if !AclOK(p.ListenConf, nc) {
+		if !AclOK(p.ListenConf, there) {
 			p.log.Debug("ACL failure: %s", there)
 			nc.Close()
 			continue

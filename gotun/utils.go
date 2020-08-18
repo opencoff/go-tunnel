@@ -78,15 +78,22 @@ func format(t time.Duration) string {
 
 // Return true if the new connection 'conn' passes the ACL checks
 // Return false otherwise
-func AclOK(cfg *ListenConf, conn net.Conn) bool {
-	h, ok := conn.RemoteAddr().(*net.TCPAddr)
-	if !ok {
-		//p.log.Debug("%s can't extract TCP Addr", conn.RemoteAddr().String())
-		return false
+func AclOK(cfg *ListenConf, addr net.Addr) bool {
+	var ip net.IP
+
+	switch a := addr.(type) {
+	case *net.TCPAddr:
+		ip = a.IP
+
+	case *net.UDPAddr:
+		ip = a.IP
+
+	default:
+		return false // conservatively block
 	}
 
 	for _, n := range cfg.Deny {
-		if n.Contains(h.IP) {
+		if n.Contains(ip) {
 			return false
 		}
 	}
@@ -96,7 +103,7 @@ func AclOK(cfg *ListenConf, conn net.Conn) bool {
 	}
 
 	for _, n := range cfg.Allow {
-		if n.Contains(h.IP) {
+		if n.Contains(ip) {
 			return true
 		}
 	}

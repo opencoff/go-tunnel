@@ -453,10 +453,10 @@ func (ipn *subnet) UnmarshalYAML(unm func(v interface{}) error) error {
 		return err
 	}
 
-	_, net, err := net.ParseCIDR(s)
+	_, nn, err := net.ParseCIDR(s)
 	if err == nil {
-		ipn.IP = net.IP
-		ipn.Mask = net.Mask
+		ipn.IP = nn.IP
+		ipn.Mask = nn.Mask
 	}
 	return err
 }
