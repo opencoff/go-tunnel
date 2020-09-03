@@ -82,6 +82,8 @@ github.com/onsi/gomega v1.4.3/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1Cpa
 github.com/onsi/gomega v1.8.1/go.mod h1:Ho0h+IUsWyvy1OpqCwxlQ/21gkhVunqlU8fDGcoTdcA=
 github.com/opencoff/go-logger v0.2.2 h1:xxQFaYbyXEYd4YL5QraKu2YUc1iEv5ACvx8L3uUxY4s=
 github.com/opencoff/go-logger v0.2.2/go.mod h1:0uZokzKt+uCJkbz12vSoChasSJoLc2aNuCS0A/U7Dqs=
+github.com/opencoff/go-logger v0.3.0 h1:JuYcSe9m+zfHXScnaWixFNQh2fTwchbOUFymfn5XPyA=
+github.com/opencoff/go-logger v0.3.0/go.mod h1:0uZokzKt+uCJkbz12vSoChasSJoLc2aNuCS0A/U7Dqs=
 github.com/opencoff/go-ratelimit v0.8.0 h1:00OL0OFYY6VtML9SlmynIlVSXa5IZQOE3ss/IeOipHQ=
 github.com/opencoff/go-ratelimit v0.8.0/go.mod h1:CZOjkRlhRo07XJt81kMF0NfOP7cYTfhZG1zPU5AAK78=
 github.com/opencoff/golang-lru v0.6.0 h1:e5jyAHA4AJbohh8mmPB6JpTvZMVrnh3z5GFAqTADVm8=
