@@ -609,6 +609,11 @@ func (p *Server) socks(fd Conn, buf []byte, log *L.Logger) (network, addr string
 	case 0x3: // fqdn; first octet is length
 		want = int(buf[4])
 		daddr = buf[5:]
+		if want == 0 {
+			log.Warn("socksv5 domain name length is zero")
+			err = errMsgTooSmall
+			return
+		}
 
 	case 0x4: // ipv6 addr
 		want = 16
