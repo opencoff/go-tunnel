@@ -465,7 +465,7 @@ func newQuicClient(network, addr string, tcfg *tls.Config, t *testing.T) *quiccl
 	assert(err == nil, "can't dial quic %s: %s", addr, err)
 
 	st := d.ConnectionState()
-	t.Logf("mock quic client: connected to %s [%s]\n", addr, st.ServerName)
+	t.Logf("mock quic client: connected to %s [%s]\n", addr, st.TLS.ServerName)
 
 	fd, err := d.OpenStream()
 	assert(err == nil, "can't open quic stream to %s: %s", addr, err)

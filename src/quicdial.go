@@ -74,7 +74,7 @@ func (q *quicDialer) Dial(network, addr string, _ Conn, ctx context.Context) (Co
 
 		state := d.ConnectionState()
 		q.log.Debug("quic-client: established new session %s-%s [%s]", d.LocalAddr().String(),
-			d.RemoteAddr().String(), state.ServerName)
+			d.RemoteAddr().String(), state.TLS.ServerName)
 		q.dest[key] = d
 	}
 	q.Unlock()

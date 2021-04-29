@@ -346,7 +346,7 @@ If you are a developer, the notes here will be useful for you:
 
 - The code uses go modules; so, you'll need a reasonably new go toolchain (1.10+)
 
-- The go-tunnel code is in `./gotun`:
+- The go-tunnel code is in `./src`:
 
     * main.go: `main()` for `gotun`
     * server.go: Implements TCP/TLS and Quic servers; also
@@ -356,7 +356,7 @@ If you are a developer, the notes here will be useful for you:
     * tcpdial.go: Dial outbound connections via TCP
     * safety.go: Safely open files/dirs referenced in config file
 
-- Tests: running tests: `go test -v ./gotun`
+- Tests: running tests: `go test -v ./src`
   Some of the tests/helpers:
     * mocked_test.go: Mock servers and clients
     * tcp_test.go: Tests for TCP/TLS to TCP/TLS

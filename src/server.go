@@ -53,7 +53,7 @@ type Server struct {
 
 	wg sync.WaitGroup
 
-	rl *ratelimit.RateLimiter
+	rl *ratelimit.Limiter
 
 	log *L.Logger
 }
@@ -303,7 +303,11 @@ func (p *QuicServer) serveQuic() {
 	done := p.ctx.Done()
 	defer p.Close()
 	for {
-		p.rl.Wait(p.ctx)
+		err := p.rl.Wait(p.ctx)
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+
 		sess, err := p.Accept(p.ctx)
 		select {
 		case <-done:
