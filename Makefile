@@ -7,7 +7,7 @@ bin:
 	./build -s
 
 test:
-	go test -v ./gotun
+	go test -v ./src
 
 clean realclean:
 	-rm -rf bin

@@ -54,7 +54,7 @@ func main() {
 	usage := fmt.Sprintf("%s [options] config-file", os.Args[0])
 
 	flag.Usage = func() {
-		fmt.Printf("gotun - TCP/TLS and Quic Server/Proxy\nUsage: %s\n", usage)
+		fmt.Printf("gotun - TCP/TLS and Quic Proxy\nUsage: %s\n", usage)
 		flag.PrintDefaults()
 	}
 
