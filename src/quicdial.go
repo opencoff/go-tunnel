@@ -15,6 +15,7 @@ import (
 	L "github.com/opencoff/go-logger"
 	"net"
 	"sync"
+	"time"
 )
 
 type quicDialer struct {
@@ -39,7 +40,6 @@ type qConn struct {
 }
 
 func newQuicDialer(r *Server, log *L.Logger) (Dialer, error) {
-
 	var nextproto = "relay"
 	r.clientTls.NextProtos = []string{nextproto}
 
@@ -58,44 +58,70 @@ func (q *quicDialer) Dial(network, addr string, _ Conn, ctx context.Context) (Co
 	var err error
 
 	key := fmt.Sprintf("%s:%s", network, addr)
-	q.Lock()
-	d, ok := q.dest[key]
-	if !ok {
-		qcfg := &quic.Config{
-			KeepAlive: true,
+
+	for tries := 0; tries < 3; tries++ {
+		q.Lock()
+		d, ok := q.dest[key]
+		if !ok {
+			d, err = q.dialNew(ctx, addr)
+			if err != nil {
+				q.Unlock()
+				return nil, err
+			}
+			q.dest[key] = d
 		}
-		d, err = quic.DialAddrContext(ctx, addr, q.r.clientTls, qcfg)
+		q.Unlock()
+
+		// From the client's perspective, the server may have restarted and thus, the old
+		// conn-context may be invalid. If so, opening a new stream on a stale conn will
+		// fail. So, if we see a failure, we go and retry.
+		t, err := d.OpenStreamSync(ctx)
 		if err != nil {
+			q.log.Warn("quic-client: %s: can't open new stream (%s); retrying new conn ..", addr, err)
+
+			// clear stale entry
+			q.Lock()
+			delete(q.dest, key)
 			q.Unlock()
 
-			q.log.Warn("quic-client: can't dial %s: %s", addr, err)
-			return nil, fmt.Errorf("quic: %s: %w", addr, err)
+			// Aaand, try one more time after a brief pause
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
 
-		state := d.ConnectionState()
-		q.log.Debug("quic-client: established new session %s-%s [%s]", d.LocalAddr().String(),
-			d.RemoteAddr().String(), state.TLS.ServerName)
-		q.dest[key] = d
-	}
-	q.Unlock()
+		connstr := fmt.Sprintf("%s-%s.%#x", d.LocalAddr().String(), d.RemoteAddr().String(), t.StreamID())
+		log := q.log.New(connstr, 0)
+		log.Debug("quic-client: opened new stream %#x", t.StreamID())
 
-	t, err := d.OpenStreamSync(ctx)
+		c := &qConn{
+			Stream: t,
+			s:      d,
+			log:    log,
+		}
+
+		return c, nil
+	}
+
+	// we tried 3 times, we give up now.
+	q.log.Warn("quic-client: unable to connect to %s; giving up after 3 tries", addr)
+	return nil, fmt.Errorf("quic: %s: can't connect after 3 tries", addr)
+}
+
+func (q *quicDialer) dialNew(ctx context.Context, addr string) (quic.Session, error) {
+	qcfg := &quic.Config{
+		KeepAlive: true,
+	}
+	d, err := quic.DialAddrContext(ctx, addr, q.r.clientTls, qcfg)
 	if err != nil {
-		q.log.Warn("quic-client: %s: can't open new stream: %s", addr, err)
+		q.log.Warn("quic-client: can't dial %s: %s", addr, err)
 		return nil, fmt.Errorf("quic: %s: %w", addr, err)
 	}
 
-	connstr := fmt.Sprintf("%s-%s.%#x", d.LocalAddr().String(), d.RemoteAddr().String(), t.StreamID())
-	log := q.log.New(connstr, 0)
-	log.Debug("quic-client: opened new stream %#x", t.StreamID())
+	state := d.ConnectionState()
+	q.log.Debug("quic-client: established new session %s-%s [%s]", d.LocalAddr().String(),
+		d.RemoteAddr().String(), state.TLS.ServerName)
 
-	c := &qConn{
-		Stream: t,
-		s:      d,
-		log:    log,
-	}
-
-	return c, nil
+	return d, nil
 }
 
 // Address abstraction that tacks on the stream-id

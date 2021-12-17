@@ -224,6 +224,7 @@ func (c *tcpclient) loop(n int) error {
 		econn := tls.Client(c, c.tls)
 		err := econn.Handshake()
 		if err != nil {
+			c.t.Logf("mock tcp client %s: tls fail: %s", from, err)
 			return err
 		}
 		fd = econn

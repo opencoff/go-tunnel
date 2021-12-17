@@ -402,11 +402,13 @@ func TestClientBadTlsToTcp(t *testing.T) {
 	pki, err := newPKI()
 	assert(err == nil, "can't create PKI: %s", err)
 
-	pkic, err := newPKI()
-	assert(err == nil, "can't create client PKI: %s", err)
-
 	spool := x509.NewCertPool()
 	spool.AddCert(pki.ca)
+
+	// We have a CA root for client certs. We set up the TLS server to use this CA root.
+	// But in the test below, we use a _different_ root to simulate error.
+	pkic, err := newPKI()
+	assert(err == nil, "can't create client PKI: %s", err)
 
 	cpool := x509.NewCertPool()
 	cpool.AddCert(pkic.ca)
@@ -437,7 +439,9 @@ func TestClientBadTlsToTcp(t *testing.T) {
 		RootCAs:      spool,
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    cpool,
+
+		// NB: cpool is the client CA RoT.
+		ClientCAs: cpool,
 		CurvePreferences: []tls.CurveID{
 			tls.CurveP256,
 			tls.X25519,
