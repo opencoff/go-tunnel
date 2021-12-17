@@ -244,6 +244,14 @@ func (c *tcpclient) loop(n int) error {
 			return nil
 		default:
 		}
+
+		// TLS Handshake errors will show up when we try to do the first write.
+		// And the server would've closed the conn (ie reset).
+		if err != nil {
+			c.t.Logf("mock tcp client: %s-%s: peer err; ending loop", from, addr)
+			return nil
+		}
+
 		assert(err == nil, "%s: write err: %s", from, err)
 		assert(nw == len(buf), "%s: partial write, exp %d, saw %d", from, len(buf), nw)
 

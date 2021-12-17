@@ -718,10 +718,6 @@ func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log
 			}
 			y += nw
 		}
-		if err != nil {
-			log.Debug("%s: read error: %s", s.RemoteAddr().String(), err)
-			return
-		}
 	}
 }
 
