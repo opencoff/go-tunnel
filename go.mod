@@ -1,9 +1,9 @@
 module github.com/opencoff/go-tunnel
 
-go 1.17
+go 1.18
 
 require (
-	github.com/lucas-clemente/quic-go v0.24.0
+	github.com/lucas-clemente/quic-go v0.25.0
 	github.com/opencoff/go-logger v0.5.1
 	github.com/opencoff/go-ratelimit v0.9.0
 	github.com/opencoff/pflag v0.5.0
@@ -16,6 +16,7 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/marten-seemann/qtls-go1-16 v0.1.4 // indirect
 	github.com/marten-seemann/qtls-go1-17 v0.1.0 // indirect
+	github.com/marten-seemann/qtls-go1-18 v0.1.0-beta.1 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/opencoff/golang-lru v0.6.0 // indirect
