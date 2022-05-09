@@ -5,11 +5,10 @@
 // License: GPLv2
 //
 
-package config // lib/config
+package config
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"strings"
@@ -58,6 +57,8 @@ const (
 	CA
 	CLIENTCA
 
+	PROXYPROTO
+
 
 	// end of reserved keywords
 	keywordEnd
@@ -93,6 +94,7 @@ var reservedWordlist = []string{
 
 	"acl",
 	"timeout",
+	"ratelimit",
 	"bind",
 	"read",
 	"write",
@@ -107,15 +109,17 @@ var reservedWordlist = []string{
 	"key",
 	"ca",
 	"client-ca",
+
+	"proxy-proto",
 }
 
-var reservedWords map[string]int
+var reservedWords map[string]TokenType
 
 func init() {
-	reservedWords = make(map[string]int)
+	reservedWords = make(map[string]TokenType)
 
 	for i, w := range reservedWordlist {
-		reservedWords[w] = i + int(keywordBegin) + 1
+		reservedWords[w] = TokenType(i + int(keywordBegin) + 1)
 	}
 }
 
@@ -200,20 +204,83 @@ func (s *Scanner) Next() (*Token, bool) {
 	return &s.tok, true
 }
 
+
+func (s *Scanner) String() string {
+	return fmt.Sprintf("%d: tok %s, prevNl: %v, ch: %q", s.line, s.tok, s.prevNL, s.ch)
+}
+
+func (s *Scanner) scan() (t Token) {
+	ch := s.next()
+
+redo:
+	for ; ch != eof; ch = s.next() {
+		if ch == ' ' {
+			continue
+		}
+		if ch == '\n' {
+			if s.prevNL {
+				return tok(EOL, string(ch), s.line)
+			}
+			continue
+		}
+		break
+	}
+
+
+	switch ch {
+	case eof:
+		return tok(EOF, "", s.line)
+	case '{':
+		t = tok(OPENPAREN, string(ch), s.line)
+		return t
+	case '}':
+		t = tok(CLOSEPAREN, string(ch), s.line)
+		return t
+
+	case '#':
+		ch = s.skipComment(ch)
+		goto redo
+
+		// If we handled quoted strings, we'd do it here.
+		// case '"': // quoted strings ...
+
+	default:
+		// fall through below.
+	}
+
+	n := s.line
+	w := s.scanWord(ch)
+	l := strings.ToLower(w)
+	if tt, ok := reservedWords[l]; ok {
+		t = tok(tt, w, n)
+		return t
+	}
+	t = tok(STRING, w, n)
+	return t
+}
+
 // read next unicode character and return it; fill the next rune from the
 // input stream.  Return eof if at end of source
 func (s *Scanner) next() rune {
 	ch := s.peek()
-	if ch != eof {
-		s.ch = s.read()
+
+	if ch == eof {
+		s.prevNL = false
+		return eof
 	}
 
+	s.ch = s.read()
 	if ch == '\n' {
 		s.line++
-		s.prevNL = true
+		if s.peek() == '\n' {
+			s.ch = s.read()
+			s.line++
+			s.prevNL = true
+		}
 	} else {
 		s.prevNL = false
 	}
+
 	return ch
 }
 
@@ -239,17 +306,18 @@ func (s *Scanner) skipComment(ch rune) rune {
 			break
 		}
 	}
+
 	return ch
 }
 
 // scan the next word (delimited by whitespace or LF)
 func (s *Scanner) scanWord(ch rune) string {
-	var b bytes.Buffer
+	var b strings.Builder
+
 	b.WriteRune(ch)
 
 	for ch = s.next(); ch != eof; ch = s.next() {
 		if ch == ' ' || ch == '\n' {
-			//fmt.Printf("word '%s' done; peek = '%c'\n", b.String(), s.ch)
 			break
 		}
 		b.WriteRune(ch)
@@ -266,53 +334,3 @@ func tok(t TokenType, s string, n int) Token {
 		Line: n,
 	}
 }
-
-func (s *Scanner) scan() (t Token) {
-	ch := s.next()
-
-redo:
-	for ch == ' ' || ch == '\n' {
-		if ch == '\n' && s.prevNL {
-			return tok(EOL, string(ch), s.line)
-		}
-		ch = s.next()
-	}
-
-	//fmt.Printf("Ch '%c'\n", ch)
-
-	switch ch {
-	case eof:
-		return tok(EOF, "", s.line)
-	case '{':
-		t = tok(OPENPAREN, string(ch), s.line)
-		//s.next()
-		return t
-	case '}':
-		t = tok(CLOSEPAREN, string(ch), s.line)
-		//s.next()
-		return t
-
-	case '#':
-		ch = s.skipComment(ch)
-		goto redo
-
-		// If we handled quoted strings, we'd do it here.
-		// case '"': // quoted strings ...
-
-	default:
-		// fall through below.
-	}
-
-	n := s.line
-	w := s.scanWord(ch)
-	//fmt.Printf("scanword: '%s'\n", w)
-	l := strings.ToLower(w)
-	i, ok := reservedWords[l]
-	if ok {
-		t = tok(TokenType(i), w, n)
-		return t
-	}
-	t = tok(STRING, w, n)
-	return t
-}
-

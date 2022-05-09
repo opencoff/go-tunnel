@@ -7,8 +7,10 @@
 // This is written as a simple recursive-descent parser with a
 // one token lookahead.
 
-package cfg // lib/cfg
+package config
 
+
+/*
 import (
 	"fmt"
 	"io"
@@ -229,3 +231,4 @@ func isSubDomainOf(rr, zname string) (string, bool) {
 	}
 	return rr + "." + zname, true
 }
+*/

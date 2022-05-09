@@ -5,8 +5,9 @@
 // License: GPLv2
 //
 
-package cfg // lib/cfg
+package config
 
+/*
 import (
 )
 
@@ -74,4 +75,4 @@ type pki struct {
 	Ca	string
 	clientCa string
 }
-
+*/
