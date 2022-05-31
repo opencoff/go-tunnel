@@ -1,110 +1,95 @@
 # UDP processing notes
 
-We have two kinds of UDP tunneling to consider:
+To support UDP seamlessly, we need to rearchitect the server code.
 
-1. Downstream UDP to a fixed endpoint:
+- socks have to be terminated locally 
+- create a new protocol for tunneling TCP and UDP over a single TLS
+  or Quic connection.
+- Distinct UDP flows to same destination will use distinct TCP/TLS
+  connections. But, in theory could reuse the same Quic connection
+  but with independent bi-dir streams
+- The remote end of the tunnel have to support three kinds of
+  backend:
 
-   ```
-   # remote server
-   listen quic :4000 pki CERT-Z 
-        ratelimit RL-Z timeout TIMEOUT-Z
-        connect udp downstream.name:2000 
+    * TCP to well known downstream endpoint (with optional
+      proxy-proto-v2)
+    * UDP to well known downstream endpoint
+    * Dynamic - where the downstream endpoint is in the first few
+      bytes of a newly established connection or quic stream
 
-   # local server
-   listen udp eth0:4000
-        ratelimit RL-Z timeout TIMEOUT-Z
-        connect quic remote.name:4000 pki CERT-Z
-   ```
 
-   Each new UDP connection from the client will create a new quic
-   stream to the remote server - thus eliminating head-of-line
-   blocking concerns for the clients.
+Correspondingly, our conf file for supporting UDP looks
+approximately like so:
 
-2. The tunnel between local and remote could also be TLS (over TCP).
-   In which case, this looks very much like case #1 above:
+```
+listen tcp eth0:2080 socks udp 4000-5000
+    timeout TIMEOUT-A ratelimit RL-A
+    connect quic server.name:9080 from ip.addr.ess
+```
 
-   ```
-    # remote server
-    listen tls :4000 pki CERT-Z 
-       ratelimit RL-Z timeout TIMEOUT-Z
-       connect udp downstream.name:2000 
+Here, the `udp` keyword indicates that the
+listening server will use a random port from the range
+4000-5000 on interface eth0 in the BIND-ADDR:BIND-PORT
+response to the UDP-ASSOCIATE SOCKS message.
 
-    # local server
-    listen udp eth0:4000
-        ratelimit RL-Z timeout TIMEOUT-Z
-        connect tls remote.name:4000 pki CERT-Z
-   ```
+The server could use the same addr:port for a given client or
+pick a new one for each SOCKS UDP-ASSOCIATE request.
 
-   Here, UDP connections from the same client will (likely) be
-   multiplexed on the same TLS stream. This will create head-of-line
-   blocking for clients. 
+In the example above - the goal is to handle both modalities
+in the same code path. Once we terminate socks protocol on the
+local-end of the tunnel, we then employ a simpl(er) protocol
+over the tunnel to communicate the intended destination:port.
 
-   In both #1 and #2 above, the datagram will be "framed" with a
-   2-byte length prefix.
+Note that the tunnel transport in the example above is quic. It
+can just as well be vanilla TLS-over-TCP; the code needs to be
+able handle both combinations (quic + tls).
 
-3. Downstream UDP via SOCKS; this has two modalities:
-   - client knows downstream address at the time of socks
-     establishment
-   - client doesn't know downstream address at the time of socks
-     establishment
+The datagrams received by the BIND-ADDR:PORT will have SOCKS UDP
+framing:
 
-   ```
-    # remote server
-    listen quic eth0:4330 CERT-A timeout TIMEOUT-A
-            ratelimit RL-A
-            connect SOCKS udp-advertise eth0:4000-5000
+```
+  u16: reserved
+  u8:  frag# - current fragment #; for us this should be ZERO
+  u8:  addr type: IPv4 (0x01), DNS name (0x03), IPv6 (0x03)
+  [n]u8: Addr 4 or 16 depending on prev field
+  u16: dest port
+  []u8: data
 
-    # local server - _must_ look like SOCKS/TCP
-    listen tcp eth0:2080
-        ratelimit RL-Z timeout TIMEOUT-Z
-        connect quic remote.name:4330 pki CERT-A
-   ```
+```
 
-   Here, the `udp-advertise` keyword indicates that the
-   listening server will use a random port from the range
-   4000-5000 on interface eth0 in the BIND-ADDR:BIND-PORT
-   response to the UDP-ASSOCIATE SOCKS message.
+In our implementation, we will use the following (approx)
+framing:
 
-   The server could use the same addr:port for a given client or
-   pick a new one for each SOCKS UDP-ASSOCIATE request.
+```
+    u8      proto       TCP |UDP
+    u8      addrtype    v4 | v6 | name
+    u16     port        dest port
+    u16     addrlen     addr length
+    []u8    addr        length bytes of address
+    u32     checksum    checksum of everything
+```
 
-   In the example above - the goal is to handle both modalities
-   in the same code path. Note that SOCKS could be running on TLS
-   (instead of Quic) and thus, the server must provide a
-   BIND-ADDR:PORT in the response for UDP-ASSOCIATE.
-
-   Note that the tunnel transport in the example above is quic. It
-   can just as well be vanilla TLS-over-TCP; the code needs to be
-   able handle both combinations (quic + tls).
-
-   The datagrams received by the BIND-ADDR:PORT will have SOCKS UDP
-   framing:
-
-   ```
-      u16: reserved
-      u8:  frag# - current fragment #; for us this should be ZERO
-      u8:  addr type: IPv4 (0x01), DNS name (0x03), IPv6 (0x03)
-      [n]u8: Addr 4 or 16 depending on prev field
-      u16: dest port
-      []u8: data
-
-   ```
-
-   In our implementation, the data consists of a 2-byte length field
-   followed by the application data. The clients are advised to stay
-   within the network MTU - since we don't handle retransmissions or
-   fragment reassembly.
+We use a checksum to ensure that the first N bytes are not
+misinterpreted by a misconfigured remote server.
 
 
 # Implementation Notes
 
-* must implement proper SOCKS-UDP support on client & server.
+* Socks is now only on the local instance; remote never has to do
+  socks.
 
-* must add a new UDP listener on the local + remote side
-  the remote end may also need to be dynamic - ie spin up new
-  listeners based on response to UDP-ASSOCIATE.
+* must add a new UDP listener on the local side; remote will never
+  listen on raw UDP ever. It will always be a tunnel - TLS or Quic.
 
 * udp-over-tls and udp-over-quic datagram framing
+
+* dynamic mode for remote - to account for socks and udp.
+  NB: UDP+Socks implies two modalities:
+
+   - client knows downstream address at the time of socks
+     establishment
+   - client doesn't know downstream address at the time of socks
+     establishment
 
 * lots more new tests. ugh.
 
