@@ -1,0 +1,23 @@
+
+
+listen_block := LISTEN TCP|UDP|QUIC listen_info opt_info CONNECT
+    connect_proto opt_connect_info
+
+listen_info := STRING [socks_info]
+socks_info := SOCKS UDP port_range
+port_range := u16 HYPHEN u16
+
+opt_info := opt*
+opt := ratelimit | acl | pki
+ratelimit := RATELIMIT ID
+acl := ACL ID
+pki := PKI ID
+
+connect_proto := connect_addr | connect_dyn
+connect_addr := TCP|UDP|QUIC STRING
+connect_dyn := DYNAMIC
+
+opt_connect_info := opt_connect*
+opt_connect := from | pki | PROXYPROTO
+from := FROM STRING
+    
