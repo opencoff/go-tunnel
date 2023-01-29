@@ -198,7 +198,7 @@ func (s *Server) newQuicServer() Proxy {
 	// XXX do we verify ServerName?
 
 	qcfg := &quic.Config{
-		KeepAlive: true,
+		KeepAlivePeriod: time.Duration(30 * time.Second),
 	}
 
 	q, err := quic.Listen(ln, s.tls, qcfg)
@@ -345,7 +345,7 @@ func (p *QuicServer) serveQuic() {
 	}
 }
 
-func (p *QuicServer) serviceSession(sess quic.Session) {
+func (p *QuicServer) serviceSession(sess quic.Connection) {
 	defer p.wg.Done()
 	done := p.ctx.Done()
 

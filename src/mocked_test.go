@@ -350,7 +350,7 @@ func (q *quicserver) accept() {
 	}
 }
 
-func (q *quicserver) serveSession(sess quic.Session) {
+func (q *quicserver) serveSession(sess quic.Connection) {
 	defer q.wg.Done()
 
 	assert := newAsserter(q.t)
@@ -434,7 +434,7 @@ func (q *quicserver) relay(fd *qconn) {
 type quicclient struct {
 	*qconn
 
-	session quic.Session
+	session quic.Connection
 
 	nr int
 	nw int
@@ -448,7 +448,7 @@ type quicclient struct {
 // abstraction to make this look like a net.Conn
 type qconn struct {
 	quic.Stream
-	s quic.Session
+	s quic.Connection
 }
 
 // qAddr is defined in quicdial.go
