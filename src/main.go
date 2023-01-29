@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/opencoff/pflag"
+	flag "github.com/spf13/pflag"
 
 	L "github.com/opencoff/go-logger"
 )
@@ -41,15 +41,19 @@ type Proxy interface {
 }
 
 func main() {
+	var debug, ver bool
+	var szStr string
+
 	// maxout concurrency
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Make sure any files we create are readable ONLY by us
 	syscall.Umask(0077)
 
-	debugFlag := flag.BoolP("debug", "d", false, "Run in debug mode")
-	verFlag := flag.BoolP("version", "v", false, "Show version info and quit")
-	flag.SizeVarP(&IOSize, "iobuf-size", "B", IOSize, "Set network I/O buffer size to `b` bytes")
+	flag.BoolVarP(&debug, "debug", "d", false, "Run in debug mode")
+	flag.BoolVarP(&ver, "version", "v", false, "Show version info and quit")
+	flag.StringVarP(&szStr, "iobuf-size", "B",
+		fmt.Sprintf("%d", IOSize), "Set network I/O buffer size to `b` bytes")
 
 	usage := fmt.Sprintf("%s [options] config-file", os.Args[0])
 
@@ -60,7 +64,7 @@ func main() {
 
 	flag.Parse()
 
-	if *verFlag {
+	if ver {
 		fmt.Printf("gotun - %s [%s; %s]\n", ProductVersion, RepoVersion, Buildtime)
 		os.Exit(0)
 	}
@@ -69,6 +73,13 @@ func main() {
 	if len(args) < 1 {
 		die("No config file!\nUsage: %s", usage)
 	}
+
+	sz, err := parseSize(szStr)
+	if err != nil {
+		die("%s", err)
+	}
+
+	IOSize = sz
 
 	cfgfile := args[0]
 	cfg, err := ReadYAML(cfgfile)
@@ -86,7 +97,7 @@ func main() {
 	const logflags int = L.Ldate | L.Ltime | L.Lshortfile | L.Lmicroseconds
 	var logf string = cfg.Logging
 
-	if *debugFlag {
+	if debug {
 		prio = L.LOG_DEBUG
 		logf = "STDOUT"
 	}
@@ -108,7 +119,7 @@ func main() {
 		die("%s: no listeners in config file", cfgfile)
 	}
 
-	if *debugFlag {
+	if debug {
 		cfg.Dump(os.Stdout)
 	}
 
