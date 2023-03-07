@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
+	"github.com/quic-go/quic-go"
 )
 
 const (

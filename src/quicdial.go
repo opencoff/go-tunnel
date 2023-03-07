@@ -11,7 +11,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/lucas-clemente/quic-go"
+	"github.com/quic-go/quic-go"
 	L "github.com/opencoff/go-logger"
 	"net"
 	"sync"
