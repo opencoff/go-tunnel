@@ -82,6 +82,7 @@ Options:
     -t, --test          Run "go test" on modules named on the command line [False]
     -v, --verbose       Build verbosely (adds "-v" to go tooling) [False]
     --vet               Run "go vet" on modules named on the command line [False]
+    --mod               Run "go mod ..." [False]
     --go-root=G         Use Go in GOROOT 'G' [$GoRoot]
     -x                  Run in debug/trace mode [False]
 EOF
@@ -166,6 +167,10 @@ do
 
         --vet)
             Tool=vet
+            ;;
+
+        --mod)
+            Tool=mod
             ;;
 
         -V|--version)
@@ -373,6 +378,11 @@ case $Tool in
     vet)
         set -- $args
         $e $Go vet $vflag "$@"
+        ;;
+
+    mod)
+        set -- $args
+        $e $Go mod $vflag "$@"
         ;;
 
     *) # Default is to build programs

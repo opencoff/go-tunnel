@@ -5,8 +5,9 @@ go 1.20
 require (
 	github.com/opencoff/go-logger v0.5.1
 	github.com/opencoff/go-ratelimit v0.9.0
+	github.com/opencoff/go-utils v0.4.1
+	github.com/opencoff/pflag v1.0.6-sh1
 	github.com/quic-go/quic-go v0.33.0
-	github.com/spf13/pflag v1.0.5
 	gopkg.in/yaml.v2 v2.4.0
 )
 
@@ -24,6 +25,7 @@ require (
 	golang.org/x/mod v0.6.0 // indirect
 	golang.org/x/net v0.4.0 // indirect
 	golang.org/x/sys v0.3.0 // indirect
+	golang.org/x/term v0.3.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/tools v0.2.0 // indirect
 )

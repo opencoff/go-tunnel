@@ -17,9 +17,10 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	flag "github.com/opencoff/pflag"
 
 	L "github.com/opencoff/go-logger"
+	"github.com/opencoff/go-utils"
 )
 
 // This will be filled in by "build"
@@ -74,7 +75,7 @@ func main() {
 		die("No config file!\nUsage: %s", usage)
 	}
 
-	sz, err := parseSize(szStr)
+	sz, err := utils.ParseSize(szStr)
 	if err != nil {
 		die("%s", err)
 	}
