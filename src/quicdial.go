@@ -111,7 +111,7 @@ func (q *quicDialer) dialNew(ctx context.Context, addr string) (quic.Connection,
 	qcfg := &quic.Config{
 		KeepAlivePeriod: time.Duration(30 * time.Second),
 	}
-	d, err := quic.DialAddrContext(ctx, addr, q.r.clientTls, qcfg)
+	d, err := quic.DialAddr(ctx, addr, q.r.clientTls, qcfg)
 	if err != nil {
 		q.log.Warn("quic-client: can't dial %s: %s", addr, err)
 		return nil, fmt.Errorf("quic: %s: %w", addr, err)

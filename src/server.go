@@ -67,7 +67,7 @@ type TCPServer struct {
 }
 
 type QuicServer struct {
-	quic.Listener
+	*quic.Listener
 
 	*Server
 }

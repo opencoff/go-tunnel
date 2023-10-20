@@ -29,8 +29,6 @@ Static=0
 Dryrun=0
 Prodver=""
 Verbose=0
-GoRoot=$HOME/go
-Go=$GoRoot/bin/go
 
 die() {
     echo "$Z: $@" 1>&2
@@ -90,9 +88,25 @@ EOF
     exit 0
 }
 
+# Detect GOROOT
+detectGoRoot() {
+    local go=$(which go)
+
+    if [ -z "$go" ]; then
+        go=$HOME/go/bin/go
+        [ ! -f $go ] && die "can't find go in PATH or $HOME/go"
+    fi
+
+    root=$(go env GOROOT)
+    echo $root
+    return 0
+}
+
 host=`uname|tr '[A-Z]' '[a-z]'`
 #export GO15VENDOREXPERIMENT=1
 
+GoRoot=$(detectGoRoot)
+Go=$GoRoot/bin/go
 declare -A oses
 declare -A cpus
 declare -A cgo
