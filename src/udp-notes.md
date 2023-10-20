@@ -61,12 +61,13 @@ In our implementation, we will use the following (approx)
 framing:
 
 ```
+    u32     checksum    checksum of everything below
     u8      proto       TCP |UDP
     u8      addrtype    v4 | v6 | name
     u16     port        dest port
     u16     addrlen     addr length
+    u16     resv        reserved
     []u8    addr        length bytes of address
-    u32     checksum    checksum of everything
 ```
 
 We use a checksum to ensure that the first N bytes are not
@@ -76,7 +77,8 @@ misinterpreted by a misconfigured remote server.
 # Implementation Notes
 
 * Socks is now only on the local instance; remote never has to do
-  socks.
+  socks. This makes it easy to do dynamic UDP-ASSOCIATE on the
+  local-end by reserving a range of ingress ports.
 
 * must add a new UDP listener on the local side; remote will never
   listen on raw UDP ever. It will always be a tunnel - TLS or Quic.
