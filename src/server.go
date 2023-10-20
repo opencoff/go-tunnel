@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lucas-clemente/quic-go"
+	"github.com/quic-go/quic-go"
 	L "github.com/opencoff/go-logger"
 	"github.com/opencoff/go-ratelimit"
 )
@@ -67,7 +67,7 @@ type TCPServer struct {
 }
 
 type QuicServer struct {
-	quic.Listener
+	*quic.Listener
 
 	*Server
 }

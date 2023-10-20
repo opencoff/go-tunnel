@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	flag "github.com/opencoff/pflag"
 
 	L "github.com/opencoff/go-logger"
 )

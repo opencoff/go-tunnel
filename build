@@ -30,9 +30,6 @@ Dryrun=0
 Prodver=""
 Verbose=0
 
-hostos=$(go env GOHOSTOS)       || exit 1
-hostcpu=$(go env GOHOSTARCH)    || exit 1
-
 die() {
     echo "$Z: $@" 1>&2
     exit 0
@@ -50,35 +47,6 @@ case $BASH_VERSION in
 esac
 
 
-# build a tool that runs on the host - if needed.
-hosttool() {
-    local tool=$1
-    local bindir=$2
-    local src=$3
-
-    local p=$(type -P $tool)
-    if [ -n "$p" ]; then
-        echo $p
-        return 0
-    fi
-
-    # from here - we want this dir to find all build artifacts
-    PATH=$PATH:$bindir
-    export PATH
-
-    p=$bindir/$tool
-    if [ -x $p ]; then
-        echo $p
-        return 0
-    fi
-
-    # build it and stash it in the hostdir
-    echo "Building tool $tool from $src .."
-    $e go get -d      $src || exit 1
-    $e go build -o $p $src || exit 1
-    echo $p
-    return 0
-}
 
 
 usage() {
@@ -112,15 +80,33 @@ Options:
     -t, --test          Run "go test" on modules named on the command line [False]
     -v, --verbose       Build verbosely (adds "-v" to go tooling) [False]
     --vet               Run "go vet" on modules named on the command line [False]
+    --mod               Run "go mod ..." [False]
+    --go-root=G         Use Go in GOROOT 'G' [$GoRoot]
     -x                  Run in debug/trace mode [False]
 EOF
 
     exit 0
 }
 
-host=`uname|tr '[A-Z]' '[a-z]'`
-export GO15VENDOREXPERIMENT=1
+# Detect GOROOT
+detectGoRoot() {
+    local go=$(which go)
 
+    if [ -z "$go" ]; then
+        go=$HOME/go/bin/go
+        [ ! -f $go ] && die "can't find go in PATH or $HOME/go"
+    fi
+
+    root=$(go env GOROOT)
+    echo $root
+    return 0
+}
+
+host=`uname|tr '[A-Z]' '[a-z]'`
+#export GO15VENDOREXPERIMENT=1
+
+GoRoot=$(detectGoRoot)
+Go=$GoRoot/bin/go
 declare -A oses
 declare -A cpus
 declare -A cgo
@@ -180,6 +166,7 @@ do
         --arch=*)
             Arch=$ac_optarg
             ;;
+
         -a|--arch)
             ac_prev=Arch
             ;;
@@ -187,6 +174,7 @@ do
         --version=*)
             Prodver=$ac_optarg
             ;;
+
         --test|-t)
             Tool=test
             ;;
@@ -195,9 +183,14 @@ do
             Tool=vet
             ;;
 
+        --mod)
+            Tool=mod
+            ;;
+
         -V|--version)
             ac_prev=Prodver
             ;;
+
         -v|--verbose)
             Verbose=1
             ;;
@@ -212,6 +205,10 @@ do
 
         --debug|-x)
             set -x
+            ;;
+
+        --go-root=*)
+            GoRoot=$ac_optarg
             ;;
 
         --print-arch)
@@ -229,10 +226,46 @@ do
             ;;
   esac
 done
+
 [ $Dryrun  -gt 0 ] && e=echo
 
 # let every error abort
 set -e
+Go=$GoRoot/bin/go
+
+# build a tool that runs on the host - if needed.
+hosttool() {
+    local tool=$1
+    local bindir=$2
+    local src=$3
+
+    local p=$(type -P $tool)
+    if [ -n "$p" ]; then
+        echo $p
+        return 0
+    fi
+
+    # from here - we want this dir to find all build artifacts
+    PATH=$PATH:$bindir
+    export PATH
+
+    p=$bindir/$tool
+    if [ -x $p ]; then
+        echo $p
+        return 0
+    fi
+
+    # build it and stash it in the hostdir
+    echo "Building tool $tool from $src .."
+    $e $Go get -d      $src || exit 1
+    $e $Go build -o $p $src || exit 1
+    echo $p
+    return 0
+}
+
+
+hostos=$($Go  env GOHOSTOS)      || exit 1
+hostcpu=$($Go env GOHOSTARCH)    || exit 1
 
 # This fragment can't be in a function - since it exports several vars
 if [ -n "$Arch" ]; then
@@ -353,12 +386,17 @@ vflag=""
 case $Tool in
     test)
         set -- $args
-        $e go test $vflag "$@"
+        $e $Go test $vflag "$@"
         ;;
 
     vet)
         set -- $args
-        $e go vet $vflag "$@"
+        $e $Go vet $vflag "$@"
+        ;;
+
+    mod)
+        set -- $args
+        $e $Go mod $vflag "$@"
         ;;
 
     *) # Default is to build programs
@@ -380,7 +418,7 @@ case $Tool in
                 dir=$p
             fi
             echo "   $dir: $out .. "
-            $e eval go build $vflag -o $Bindir/$out $isuffix "$ldflags" ./$dir || exit 1
+            $e eval $Go build $vflag -o $Bindir/$out $isuffix "$ldflags" ./$dir || exit 1
         done
         ;;
 esac
