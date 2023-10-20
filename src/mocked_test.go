@@ -286,7 +286,7 @@ func (c *tcpclient) loop(n int) error {
 }
 
 type quicserver struct {
-	quic.Listener
+	*quic.Listener
 
 	t *testing.T
 
@@ -470,7 +470,7 @@ func newQuicClient(network, addr string, tcfg *tls.Config, t *testing.T) *quiccl
 	assert := newAsserter(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	d, err := quic.DialAddrContext(ctx, addr, tcfg, &quic.Config{})
+	d, err := quic.DialAddr(ctx, addr, tcfg, &quic.Config{})
 	assert(err == nil, "can't dial quic %s: %s", addr, err)
 
 	st := d.ConnectionState()
