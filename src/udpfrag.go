@@ -1,4 +1,4 @@
-// udpfragmap.go - fragmaps for handling udp fragments
+// udpfrag.go - handles udp fragments
 //
 // Author: Sudhi Herle <sudhi@herle.net>
 //
@@ -43,6 +43,15 @@ func newFragmap() *fragmap {
 	return b
 }
 
+func (b *fragmap) init() {
+	bm := b.bm[:]
+	for i := range bm {
+		bm[i] = 0
+	}
+	b.last = -1
+	b.mtime = time.Now()
+}
+
 // Age returns the duration since the last update
 func (b *fragmap) Age() time.Duration {
 	return time.Since(b.mtime)
@@ -53,8 +62,13 @@ func (b *fragmap) Age() time.Duration {
 // When all fragments are complete, it returns true and the list of fragments.
 // It returns false until all fragments are complete.
 func (b *fragmap) Add(i uint8, buf []byte, offset int) ([]buffer, bool) {
-	if i == 0 && i > 255 {
-		panic("fragmap out of range")
+	// frag == 0 implies sender doesn't use fragments. ie we treat it as
+	// the sole and final frag.
+	if i == 0 {
+		x := &b.bufs[0]
+		x.b = buf
+		x.off = offset
+		return b.bufs[:1], true
 	}
 
 	b.mtime = time.Now()

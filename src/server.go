@@ -58,20 +58,6 @@ type Server struct {
 	log *L.Logger
 }
 
-// Encapsulates info needed to be a plain listener or a TLS listener.
-// And has a dialer to connect to a plain or TLS endpoint
-type TCPServer struct {
-	*net.TCPListener
-
-	*Server
-}
-
-type QuicServer struct {
-	*quic.Listener
-
-	*Server
-}
-
 type Dialer interface {
 	// Conn is our abstraction over TCP/TLS and quic.ic
 	Dial(net, addr string, lhs Conn, c context.Context) (Conn, error)
@@ -154,312 +140,11 @@ func NewServer(lc *ListenConf, c *Conf, log *L.Logger) Proxy {
 	return s.newTCPServer()
 }
 
-func (s *Server) newTCPServer() Proxy {
-	addr := s.Addr
-
-	la, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		die("Can't resolve %s: %s", addr, err)
-	}
-
-	ln, err := net.ListenTCP("tcp", la)
-	if err != nil {
-		die("Can't listen on %s: %s", addr, err)
-	}
-
-	p := &TCPServer{
-		TCPListener: ln,
-		Server:      s,
-	}
-	return p
-}
-
-func (s *Server) newQuicServer() Proxy {
-	addr := s.Addr
-
-	if len(s.tls.ServerName) == 0 {
-		die("Quic Server %s: No TLS server name specified", addr)
-	}
-
-	la, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		die("Can't resolve %s: %s", addr, err)
-	}
-
-	ln, err := net.ListenUDP("udp", la)
-	if err != nil {
-		die("Can't listen on %s: %s", addr, err)
-	}
-
-	// we need to set the next-proto to be relay or socks
-	var nextproto = "relay"
-	s.tls.NextProtos = []string{nextproto}
-
-	// XXX do we verify ServerName?
-
-	qcfg := &quic.Config{
-		KeepAlivePeriod: time.Duration(30 * time.Second),
-	}
-
-	q, err := quic.Listen(ln, s.tls, qcfg)
-	if err != nil {
-		die("can't start quic listener on %s: %s", addr, err)
-	}
-
-	p := &QuicServer{
-		Listener: q,
-		Server:   s,
-	}
-
-	return p
-}
-
-// Start listener
-func (p *TCPServer) Start() {
-
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-
-		if p.tls != nil {
-			p.log.Info("Starting TLS server ..")
-		} else {
-			p.log.Info("Starting TCP server ..")
-		}
-
-		p.log.Info("Ratelimit: Global %d req/s, Per-host: %d req/s",
-			p.Ratelimit.Global, p.Ratelimit.PerHost)
-
-		p.serveTCP()
-	}()
-}
-
-// Stop server
-func (p *TCPServer) Stop() {
-	p.cancel()
-	p.TCPListener.Close() // causes Accept() to abort
-	p.wg.Wait()
-	p.log.Info("TCP server shutdown")
-}
-
-// Start Quic listener
-func (p *QuicServer) Start() {
-
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-
-		p.log.Info("Starting Quic server ..")
-		p.log.Info("Ratelimit: Global %d req/s, Per-host: %d req/s",
-			p.Ratelimit.Global, p.Ratelimit.PerHost)
-
-		p.serveQuic()
-	}()
-}
-
-// Stop server
-func (p *QuicServer) Stop() {
-	p.cancel()
-	p.Listener.Close() // causes Accept() to abort
-	p.wg.Wait()
-	p.log.Info("Quic server shutdown")
-}
-
-func (p *TCPServer) serveTCP() {
-	n := 0
-	done := p.ctx.Done()
-	defer p.Close()
-	for {
-		conn, err := p.Accept()
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		if err != nil {
-			n += 1
-			if n >= 10 {
-				p.log.Warn("Accept failure: %s", err)
-				p.log.Warn("10 consecutive server accept() failure; bailing ..")
-				return
-			}
-
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		n = 0
-		src := conn.RemoteAddr().String()
-		ctx := context.WithValue(p.ctx, "client", src)
-
-		p.wg.Add(1)
-		go p.handleTCP(conn, ctx)
-	}
-}
-
-func (p *QuicServer) serveQuic() {
-	n := 0
-	done := p.ctx.Done()
-	defer p.Close()
-	for {
-		err := p.rl.Wait(p.ctx)
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-
-		sess, err := p.Accept(p.ctx)
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		if err != nil {
-			n += 1
-			if n >= 10 {
-				p.log.Warn("Accept failure: %s", err)
-				p.log.Warn("10 consecutive server accept() failure; bailing ..")
-				return
-			}
-
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		there := sess.RemoteAddr()
-
-		// wait for per-host ratelimiter
-		p.rl.WaitHost(p.ctx, there)
-
-		// Check ACLs only after we have ratelimited inbound conns
-		if !AclOK(p.ListenConf, there) {
-			p.log.Debug("ACL failure: %s", there)
-			sess.CloseWithError(401, "Not authorized")
-			continue
-		}
-
-		n = 0
-		p.wg.Add(1)
-		go p.serviceSession(sess)
-	}
-}
-
-func (p *QuicServer) serviceSession(sess quic.Connection) {
-	defer p.wg.Done()
-	done := p.ctx.Done()
-
-	n := 0
-	for {
-		// we also accept the corresponding stream
-		conn, err := sess.AcceptStream(p.ctx)
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		if err != nil {
-			n += 1
-			if n >= 10 {
-				p.log.Warn("AcceptStream failure: %s", err)
-				p.log.Warn("10 consecutive server AcceptStream() failure; bailing ..")
-				return
-			}
-
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		n = 0
-		qc := &qConn{
-			Stream: conn,
-			s:      sess,
-		}
-		peer := qc.LocalAddr()
-		ctx := context.WithValue(p.ctx, "client", peer.String())
-
-		qc.log = p.log.New(peer.String(), 0)
-
-		p.wg.Add(1)
-		go p.handleConn(qc, ctx, qc.log)
-	}
-}
-
-func (p *TCPServer) handleTCP(conn Conn, ctx context.Context) {
-	if p.tls != nil {
-		lhs := conn.RemoteAddr().String()
-		econn := tls.Server(conn, p.tls)
-		err := econn.Handshake()
-		if err != nil {
-			p.log.Warn("can't establish TLS with %s: %s", lhs, err)
-			conn.Close()
-			p.wg.Done()
-			return
-		}
-
-		st := econn.ConnectionState()
-		p.log.Debug("tls server handshake with %s complete; Version %#x, Cipher %#x", lhs,
-			st.Version, st.CipherSuite)
-		conn = econn
-	}
-
-	log := p.log.New(conn.RemoteAddr().String(), 0)
-	p.handleConn(conn, ctx, log)
-}
-
-// handle the relay from 'conn' to the peer and back.
-// this sets up the peer connection before the relay
-func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
-	defer func() {
-		p.wg.Done()
-		conn.Close()
-	}()
-
-	var err error
-	var network, addr string
-	var nr int
-
-	b0 := p.getBuf()
-	addr = p.Connect.Addr
-	network = p.dialnet
-	socks := p.Connect.IsSocks()
-
-	if socks {
-		network, addr, nr, err = p.socks(conn, b0, log)
-		if err != nil {
-			return
-		}
-	}
-
-	peer, err := p.dial.Dial(network, addr, conn, ctx)
-	if err != nil {
-		log.Warn("can't connect to %s: %s", addr, err)
-
-		// send error message or success to client
-		// buffer b0 is still intact
-		if socks {
-			b0[1] = 0x4 // XXX generic error
-			WriteAll(conn, b0[:nr])
-		}
-		return
-	}
-
-	if socks {
-		b0[1] = 0x0
-		_, err = WriteAll(conn, b0[:nr])
-		select {
-		case <-p.ctx.Done():
-			return
-		default:
-		}
-		if err != nil {
-			log.Warn("can't write socks response: %s", err)
-			return
-		}
-	}
-
-	defer peer.Close()
+// Handle the relay from 'conn' to the peer and back.
+// This sets up the peer connection before the relay.
+// This is called by tcpsrv.go and quicsrv.go in their
+// respective handler-loops.
+func (p *Server) handleConn(conn, peer Conn, ctx context.Context, log *L.Logger) {
 
 	// we grab the printable info before the socket is closed
 	lhs_there := conn.LocalAddr().String()
@@ -477,6 +162,7 @@ func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
 
 	var wg sync.WaitGroup
 
+	b0 := p.getBuf()
 	b1 := p.getBuf()
 
 	wg.Add(2)
@@ -506,6 +192,7 @@ func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
 
 	p.putBuf(b0)
 	p.putBuf(b1)
+	peer.Close()
 
 	log.Info("%s: rd %d, wr %d; %s: rd %d, wr %d", inbound, r1, w0, outbound, r0, w1)
 }
@@ -721,59 +408,6 @@ func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log
 	}
 }
 
-// Accept() new socket connections from the listener
-func (p *TCPServer) Accept() (net.Conn, error) {
-	ln := p.TCPListener
-	for {
-		ln.SetDeadline(time.Now().Add(2 * time.Second))
-
-		nc, err := ln.Accept()
-
-		select {
-		case <-p.ctx.Done():
-			if err == nil {
-				nc.Close()
-			}
-			return nil, errShutdown
-
-		default:
-		}
-
-		if err != nil {
-			if ne, ok := err.(net.Error); ok {
-				if ne.Timeout() || ne.Temporary() {
-					continue
-				}
-			}
-			return nil, err
-		}
-
-		there := nc.RemoteAddr()
-
-		// First enforce a global ratelimit
-		if !p.rl.Allow() {
-			p.log.Debug("global ratelimit reached: %s", there)
-			nc.Close()
-			continue
-		}
-
-		// Then a per-host ratelimit
-		if !p.rl.AllowHost(there) {
-			p.log.Debug("per-host ratelimit reached: %s", there)
-			nc.Close()
-			continue
-		}
-
-		if !AclOK(p.ListenConf, there) {
-			p.log.Debug("ACL failure: %s", there)
-			nc.Close()
-			continue
-		}
-
-		p.log.Debug("Accepted new connection from %s", there)
-		return nc, nil
-	}
-}
 
 func (s *Server) getSNIHandler(dir string, log *L.Logger) func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	conf := s.conf

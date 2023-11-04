@@ -76,22 +76,57 @@ misinterpreted by a misconfigured remote server.
 
 # Implementation Notes
 
-* Socks is now only on the local instance; remote never has to do
-  socks. This makes it easy to do dynamic UDP-ASSOCIATE on the
-  local-end by reserving a range of ingress ports.
+* Local server is in exactly one of two modes:
+    - TCP with socks
+    - TCP with static remote endpoints
+    - In particular we don't support raw udp tunnels.
 
-* must add a new UDP listener on the local side; remote will never
-  listen on raw UDP ever. It will always be a tunnel - TLS or Quic.
+* Terminate socks on the local side
+    - support socks only on local tcp endpoint; need config checks for this
+    - tunnel can be TLC or Quic. quicdial.go and tcpdial.go have the right
+      abstractions to support uniform dialer modalities in the server loop.
+    - once socks is negotiated with client:
+       * if udp-associate:
+           - handoff to udp processing; udp-processor will invoke the dialer
+           - fork goroutine to handle udp clients; track the goroutines via Server.wg
+        * else
+           - dial connection (TLS|Quic)
+           - setup relay
+           - relay processing has the same format:
+                * send dest in hdr packet
+                * followed by client data
+                * only first response has reply header.
 
-* udp-over-tls and udp-over-quic datagram framing
+    - Remote service that accepts tls or quic has to implement appropriate
+      exit checks: either dyanmic endpoints are allowed or they are not based
+      on config file.
 
-* dynamic mode for remote - to account for socks and udp.
-  NB: UDP+Socks implies two modalities:
+* local-to-remote dialers need a bit of work:
+    - use AddrSpec to pass the outbound info; this means each dialer will 
+      marshal and send the dest addr in a new TLS conn OR a quick-stream
+    - the remote end should unmarshal, do the next hop dialing (as described below)
+      and return success/failure. This means we need a response method as well
 
-   - client knows downstream address at the time of socks
-     establishment
-   - client doesn't know downstream address at the time of socks
-     establishment
+* cleanup socks handling
+    - separate file documenting the bits (socks5.go)
+    - methods here are called from TCP server; it ought to be part of TCPServer
+    - TCPServer ought to have the necessary bits for udp port finding etc:
+        * single list (rand.Shuffle()); two pointers: head, tail
+        * list guarded by mutex (keep it simple)
+        * track udp listener goroutines via parent wg
 
-* lots more new tests. ugh.
+* Remote server modes:
+    - TCP vs. TLS could be separate functions; socks5 termination only on
+      TCP instance.
+    - TLS/Quic in static mode: single dest endpoint: TCP dialer only
+    - TLS in dyn mode: every conn looks for dest hdr; must support udp dialing
+    - Quic and TLS could share udp handling - by having a common set of dialers:
+        * TCP dialer
+        * UDP dialer
+    - It makes sense to separate these into diff files so its easy to follow?
+
+
+TODO:
+* Why can't downstream connections be TLS/Quic?
+* Supporting raw local UDP listeners with 1:1 remote mapping?
 

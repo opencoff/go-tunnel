@@ -10,6 +10,7 @@ package main
 
 import (
 	"net/netip"
+	L "github.com/opencoff/go-logger"
 )
 
 
@@ -47,26 +48,6 @@ func (s *Server) doGreeting(fd Conn, buf []byte, log *L.Logger) (error) {
 	return err
 }
 
-type AddrType uint8
-const (
-	A_INVALID AddrType = 0x0
-	A_IPV4    AddrType = 0x01
-	A_HOST    AddrType = 0x03
-	A_IPV6    AddrType = 0x04
-)
-
-type Proto uint8
-const (
-	P_TCP  Proto = 0x01
-	P_UDP  Proto = 0x03
-)
-
-type AddrSpec struct {
-	Typ  AddrType
-	Proto Proto
-	AddrPort netip.AddrPort
-	HostPort string
-}
 
 func (s *Server) doClientConn(fd Conn, log *L.Logger) (a AddrSpec, err error) {
 	buf := s.getBuf()
@@ -105,87 +86,8 @@ func (s *Server) doClientConn(fd Conn, log *L.Logger) (a AddrSpec, err error) {
 		return
 	}
 
-	aparse := func(b []byte) (netip.Addr, error) {
-		x, err := netip.ParseAddr(string(b))
-		if err != nil {
-			count("bad-addr", 1)
-			log.Debug("can't parse IP addr: %s", err)
-		}
-		return x, err
-	}
-
-	toPort := func(b []byte) uint16 {
-		return uint16(b[0] << 8) + uint16(b[1])
-	}
-
 	// Now we decode the address
-	abuf := buf[3:]
-	want := 0
-
-	switch abuf[0] {
-	case A_IPV4:
-		want = 4
-		daddr := buf[4:]
-
-	case A_HOST:
-		want = int(abuf[1])
-		daddr := abuf[2:]
-
-	case A_IPV6:
-		want = 16
-		daddr := buf[4:]
-
-	default:
-		count("bad-addrtype", 1)
-		log.Debug("unknown client addrtype %#x", abuf[0])
-		err = errUnsupportedAddr
-		return
-	}
-
-	if len(abuf) < (want + 2 + 1) {
-		count("too-small", 1)
-		log.Debug("insufficient client-conn-addr bytes; want %d, have %d", (want+2+1), len(abuf))
-		err = errMsgTooSmall
-		return
-	}
-
-	port := toPort(daddr[want:])
-	switch abuf[0] {
-	case A_IPV4:
-		addr := fmt.Sprintf("%d.%d.%d.%d:%d", daddr[0], daddr[1], daddr[2], daddr[3], port)
-		a.Typ = A_IPV4
-		a.AddrPort, err = netip.ParseAddrPort(addr)
-		if err != nil {
-			count("bad-addr", 1)
-			log.Debug("bad IPv4 client conn addr: %s", err)
-			return
-		}
-
-	case A_HOST:
-		var s strings.Builder
-		for i := 0; i < want; i++ {
-			s.WriteByte(daddr[i])
-		}
-		addr := s.String()
-		a.Typ = A_HOST
-		a.HostPort = fmt.Sprintf("%s:%d", addr, port)
-
-	case A_IPV6:
-		var s strings.Builder
-		s.WriteString(fmt.Sprintf("[%02x", daddr[0]))
-		for i := 1; i < want; i++ {
-			s.WriteString(fmt.Sprintf(":%02x", daddr[i]))
-		}
-		s.WriteRune(']')
-		addr := s.String()
-		a.AddrPort, err = netip.ParseAddrPort(fmt.Sprintf("%s:%d", addr, port))
-		if err != nil {
-			count("bad-addr", 1)
-			log.Debug("bad IPv6 client conn addr: %s", err)
-			return
-		}
-	}
-
+	_, err = a.parseAddrSpec(buf[3:], log)
 	return
 }
 
@@ -251,25 +153,48 @@ type UDPListener struct {
 	// rate limiter
 	rl  *ratelimit.Limiter
 
-	// my peer - already connected
-	// either a quic stream or a TCP/TLS socket
-	peer Conn
+	// the IP addr of client that sent the original udp-associate
+	from netip.Addr
 
 	log *L.Logger
 
 	ctx context.Context
 	cancel context.CancelFunc
+
+	// the parent server which handled the initial udp-associate
 	s *Server
+
+	// A single client could send from multiple source ports. We will setup
+	// a new peer conn for every such unique tuple.
+	clients map[netip.AddrPort]*udprelay
+}
+
+type udprelay struct {
+	// established conn with peer
+	peer Conn
+
+	// fragment handler
+	f   fragmap
 }
 
 
-func (s *Server) NewUDPListener(ctx context.Context, peer Conn, a netip.AddrPort) (*UDPListener, error) {
+// Create a new UDP listener for a client with IP Addr 'from':
+// - listen on 'a'
+// - forward to 'peer'
+func (s *Server) NewUDPListener(ctx context.Context, from netip.Addr, a netip.AddrPort) (*UDPListener, error) {
 	var net string = "udp"
 	if a.Addr().Is6() {
 		net = "udp6"
 	}
 
-	fd, err := net.ListenUDP(net, a.String())
+	/*
+	udpaddr := net.UDPAddr{
+		IP: a.Addr.AsSlice(),
+		Port: int(a.Port()),
+	}
+	*/
+
+	fd, err := net.ListenUDP(net, &a)
 	if err != nil {
 		count("udp-listen-fail", 1)
 		log.Warn("can't listen on %s: %s", a.String(), err)
@@ -279,10 +204,12 @@ func (s *Server) NewUDPListener(ctx context.Context, peer Conn, a netip.AddrPort
 	ctx, cancel := context.WithCancel(ctx)
 	u := &UDPListener{
 		fd:   fd,
-		peer: peer,
-		log:  s.log.New("UDP %s-%s", a.String(), peer.String()),
+		log:  s.log.New("UDP %s", a.String()),
 		ctx:  ctx,
+		from: from,
 		cancel: cancel,
+		server: s,
+		clients: make(map[netip.AddrPort]*udprelay),
 	}
 
 	s.wg.Add(1)
@@ -305,7 +232,7 @@ func (u *UDPListener) serveUDP() {
 	}()
 
 	done := u.ctx.Done()
-	buf := u.s.getBuf()
+	buf := s.getBuf()
 	ctx := u.ctx
 	log := u.log
 	for {
@@ -333,22 +260,218 @@ func (u *UDPListener) serveUDP() {
 		}
 		errs = 0
 
+		// Ignore zero sized datagrams
+		if n == 0 {
+			count("zero-sized-udp", 1)
+			continue
+		}
+
+		// Make sure this is the same host that initiated the udp-associate
+		// (primitive DoS mitigation)
+		ax := a.AddrPort().Addr()
+		if  ax != u.from {
+			count("unknown-client", 1)
+			log.Debug("%s: unknown client - dropped", a.String())
+			continue
+		}
+
 		// per host ratelimiting
 		u.rl.WaitHost(ctx, a)
 
+		// acl checks - we want to use the same acl as the underlying socks5 server that
+		// handled the udp-associate
 		if !AclOK(s.ListenConf, a) {
 			count("acl-deny", 1)
 			log.Debug("%s: ACL denied", a.String())
 			continue
 		}
 
-		// parse UDP socks framing
-
-		// handle fragments
-		// handle timeouts for fragment handling
-
-		// finally forward the data
+		if u.handleUDP(buf[:n], a.AddrPort()) {
+			buf = s.getBuf()
+		}
 	}
 }
 
+// create a new udpclient instance and dial the peer as needed
+func (u *UDPListener) newUDPRelay() (*udprelay, error) {
+	peer, err := u.s.dial(u.ctx)
+	if err != nil {
+		// XXX We assume appropriate logs are written by dial()
+		return nil, err
+	}
 
+	cl := &udpclient{
+		peer: peer,
+	}
+
+	cl.f.init()
+	return cl, nil
+}
+
+// handle one packet from a client and return true if the buffer was consumed (to be
+// freed later).
+func (u *UDPListener) handleUDP(buf []byte, from netip.AddrPort) bool {
+	log := u.log
+
+	var a AddrSpec
+
+	// First decode the udp socks5 framing
+	frag := buf[2]
+	log := u.log
+
+	n, err := a.parseAddrSpec(buf[4:], log)
+	if err != nil {
+		return false
+	}
+
+	// data offset is 'n'
+	// Only this goroutine accesses this map; so we don't need locks around it.
+	// (NB: Every UDPListener instance is in its own goroutine - and is tied to
+	//  the corresponding udp-listen port allocated by udp-associate)
+	cl, ok := u.clients[from]
+	if !ok {
+		cl, err = u.newUDPClient()
+		if err != nil {
+			return false
+		}
+		u.clients[from] = cl
+	}
+
+	bufs, ok := cl.f.Add(frag, buf, n)
+	if !ok {
+		// We tell the caller that we consumed this buffer and they
+		// need to replenish.
+		return true
+	}
+
+	// We have a list of buffers, we transmit and relay:
+	// - send our internal relay header
+	// - followed by the actual data packets
+	var hdr [268]byte
+	hdrsiz := a.Marshal(hdr[:])
+	if hdrsiz == 0 {
+		panic("udp relay hdr size too small")
+	}
+
+	s := p.s
+
+	// from this point on - we have to return consumed buffers.
+	// In particular, the incoming buffer is _also_ consumed:
+	// it went into the fragmap!
+	defer func() {
+		for _, b := range bufs {
+			s.putBuf(b)
+		}
+	}()
+
+	done := u.ctx.Done()
+
+	// first the relay header
+	_, err := WriteAll(cl.peer, hdr[:hdrsiz])
+	if err != nil {
+		count("werr-udp-relay", 1)
+		log.Debug("udp-relay write error: %s", err)
+		return true
+	}
+
+	select {
+	case <- done:
+		return true
+	default:
+	}
+
+	// then the client data bufs
+	for _, b := range bufs {
+		data := b.b[b.off:]
+		_, err = WriteAll(cl.peer, data)
+		if err != nil {
+			count("werr-udp-relay", 1)
+			log.Debug("udp-relay write error: %s", err)
+			return true
+		}
+		select {
+		case <- done:
+			return true
+		default:
+		}
+	}
+
+
+	// Now wait for data from peer and relay it.
+	// We can reuse the incoming buffer - we consumed and sent to
+	// our peer above.
+
+	buf := buf[:cap(buf)]
+
+	// We only send back exactly one fragment (regardless of size)
+	// Build the UDP Header
+	h := buf[:]
+	h[0] = 0    // resv
+	h[1] = 0    // resv
+	h[2] = 0    // no fragment handling
+	h[3] = a.Typ
+	hdrsiz = 4
+	switch a.Typ {
+	case  A_IPV4, A_IPV6:
+		z := copy(h[4:], a.Addr.AsSlice())
+		hdrsiz += z
+
+	case A_HOST:
+		// No one modified 'a'; thus, we know that len(a.Host) < 256!
+		h[4] = uint8(len(a.Host))
+		z := copy(h[5:], []byte(a.Host))
+		hdrsiz += (z + 1)
+	default:
+		panic(fmt.Sprintf("udp-relay: unknown addr type: %#x", a.Typ))
+	}
+
+	h[hdrsiz] = uint8(0xff & (a.Port >> 8))
+	h[hdrsiz+1] = uint8(0xff & a.Port)
+	hdrsiz += 2
+
+
+	// Now read the response from peer
+	// XXX What if our buffer size is not enough to read what the peer sends?
+	n, err := cl.peer.Read(buf[hdrsiz:])
+	select {
+	case <- done:
+		return true
+	default:
+	}
+
+	if err != nil {
+		count("rerr-udp-relay", 1)
+		log.Debug("udp-relay read error: %s", err)
+		return true
+	}
+	if n == 0 {
+		count("zero-sized-peer-msg", 1)
+		return true
+	}
+
+	// Send socks formatted message back to the peer
+	_, err = writeAllTo(u.fd, buf[:hdrsiz+n], from)
+	if err != nil {
+		count("werr-udp-relay", 1)
+		log.Debug("udp-relay write error: %s", err)
+	}
+
+	return true
+}
+
+
+func writeAllTo(fd *net.UDPConn, b []byte, to netip.AddrPort) (int, error) {
+	n := len(b)
+	nw := 0
+	for n > 0 {
+		z, err := fd.WriteTo(b, to)
+		if err != nil {
+			return nw, err
+		}
+
+		n -= z
+		nw += z
+		b = b[z:]
+	}
+	return nw, nil
+}
