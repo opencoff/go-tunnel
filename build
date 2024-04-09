@@ -4,7 +4,7 @@
 #
 # - it tacks on a version number for use by the individual tools
 # - it supports git and mercurial version#
-# 
+#
 # NB:
 #   o the attempt at decoding dirty repo state for mercurial is
 #     borked. It doesn't know about untracked files
@@ -28,7 +28,9 @@ PWD=`pwd`
 Static=0
 Dryrun=0
 Prodver=""
+Repover=""
 Verbose=0
+Go=`which go`
 
 die() {
     echo "$Z: $@" 1>&2
@@ -46,10 +48,48 @@ case $BASH_VERSION in
         ;;
 esac
 
+getvcs_version() {
+    local rev=
+    local prodv=
 
+    if [ -d "./.hg" ]; then
+        local xrev=$(hg id --id) || exit 1
+        local brev=${xrev%+}
+        if [ "$brev" != "$xrev" ]; then
+            rev="hg:${brev}-dirty"
+        else
+            rev="hg:${brev}"
+        fi
+        prodv=$(hg log -r "branch(stable) and tag()" -T "{tags}\n" | sort -V | tail -1)
+    elif [ -d "./.git" ]; then
+        local xrev=$(git describe --always --dirty --long --abbrev=12) || exit 1
+        rev="git:$xrev"
+        prodv=$(git tag --list | sort -V | tail -1)
+    else
+        rev="UNKNOWN-VER"
+        warn "Can't find version info"
+    fi
+
+    [ -n "$Prodver" ] && prodv=$Prodver
+
+    echo "$rev $prodv"
+    return 0
+}
+
+read -r Repover Prodver <<< $(getvcs_version)
 
 
 usage() {
+    declare -a progv=($Progs)
+    declare n=${#progv[@]}
+    declare pstr=
+
+    for ((i=0; i < n; i++)); do
+        local ent=${progv[$i]}
+        local dir=${ent%%:*}
+        local tool=${ent##*:}
+        pstr=$(printf "$pstr\n\t%s $Prodver $Repover (from ./%s)" $tool $dir)
+    done
 
     cat <<EOF
 $0 - A Go production build tool that adds git-repository information,
@@ -66,7 +106,7 @@ Usage: $0
 Where OS-ARCH denotes one of the valid OS, ARCH combinations supported by 'go'.
 And, PROGS is one or more go programs.
 
-With no arguments, $0 builds: $Progs (source in ./src/)
+With no arguments, $0 builds: $pstr
 
 The repository's latest tag is used as the default version of the software being
 built.
@@ -81,32 +121,16 @@ Options:
     -v, --verbose       Build verbosely (adds "-v" to go tooling) [False]
     --vet               Run "go vet" on modules named on the command line [False]
     --mod               Run "go mod ..." [False]
-    --go-root=G         Use Go in GOROOT 'G' [$GoRoot]
+    --go=G              Use Go in 'G' [$Go]
     -x                  Run in debug/trace mode [False]
+    --print-arch        Print the target architecture and exit
 EOF
 
     exit 0
 }
 
-# Detect GOROOT
-detectGoRoot() {
-    local go=$(which go)
-
-    if [ -z "$go" ]; then
-        go=$HOME/go/bin/go
-        [ ! -f $go ] && die "can't find go in PATH or $HOME/go"
-    fi
-
-    root=$(go env GOROOT)
-    echo $root
-    return 0
-}
-
 host=`uname|tr '[A-Z]' '[a-z]'`
-#export GO15VENDOREXPERIMENT=1
 
-GoRoot=$(detectGoRoot)
-Go=$GoRoot/bin/go
 declare -A oses
 declare -A cpus
 declare -A cgo
@@ -231,7 +255,6 @@ done
 
 # let every error abort
 set -e
-Go=$GoRoot/bin/go
 
 # build a tool that runs on the host - if needed.
 hosttool() {
@@ -239,30 +262,65 @@ hosttool() {
     local bindir=$2
     local src=$3
 
-    local p=$(type -P $tool)
-    if [ -n "$p" ]; then
-        echo $p
-        return 0
-    fi
-
-    # from here - we want this dir to find all build artifacts
-    PATH=$PATH:$bindir
-    export PATH
-
     p=$bindir/$tool
     if [ -x $p ]; then
-        echo $p
         return 0
     fi
+
+    local tmpdir=/tmp/$tool.$$
+    mkdir $tmpdir || die "can't make $tmpdir"
+
+    # since go1.20 - install uses env vars to decide where to put
+    # build artifacts. Why are all the google tooling so bloody dev
+    # hostile! WTF is wrong with command line args?!
+    export GOBIN=$bindir
 
     # build it and stash it in the hostdir
     echo "Building tool $tool from $src .."
-    $e $Go get -d      $src || exit 1
-    $e $Go build -o $p $src || exit 1
-    echo $p
+    (
+       cd $tmpdir
+       $e $Go install  $src@latest || die "can't install $tool"
+    )
+    $e rm -rf  $tmpdir
+
     return 0
 }
 
+# protobuf gen
+buildproto() {
+    local pbgo=protoc-gen-go
+    local vtgo=protoc-gen-go-vtproto
+    local vtgo_src=github.com/planetscale/vtprotobuf/cmd/protoc-gen-go-vtproto
+    local pc
+    local args="$*"
+
+    local pgen=$(type -p protoc)
+    local gogen=$(type -p $pbgo)
+    local vt=$Hostbindir/$vtgo
+
+    [ -z $pgen  ] && die "install protoc tools"
+    [ -z $gogen ] && die "install protoc-gen-go"
+
+    # now install the vtproto generator
+    hosttool $vtgo $Hostbindir $vtgo_src
+
+    for f in $args; do
+        local dn=$(dirname $f)
+        local bn=$(basename $f .proto)
+
+
+        $e $pgen  \
+            --go_out=. --plugin protoc-gen-go=$gogen \
+            --go-vtproto_out=. --plugin protoc-gen-go-vtproto="$vt" \
+            --go-vtproto_opt=features=marshal+unmarshal+size  \
+             $f || die "can't generate protobuf output for $f .."
+    done
+
+    return 0
+}
+
+
+# the rest has to execute in the context of main shell (not funcs)
 
 hostos=$($Go  env GOHOSTOS)      || exit 1
 hostcpu=$($Go env GOHOSTARCH)    || exit 1
@@ -320,62 +378,21 @@ fi
 # This is where build outputs go
 Bindir=$PWD/bin/$cross
 Hostbindir=$PWD/bin/$hostos-$hostcpu
+export PATH=$Hostbindir:$PATH
 
 [ -d $Bindir ]     || mkdir -p $Bindir
 [ -d $Hostbindir ] || mkdir -p $Hostbindir
 
-# Get git/hg version info for the build
-if [ -d "./.hg" ]; then
-    xrev=$(hg id --id) || exit 1
-    brev=${xrev%+}
-    if [ "$brev" != "$xrev" ]; then
-        rev="hg:${brev}-dirty"
-    else
-        rev="hg:${brev}"
-    fi
-    if [ -z "$Prodver" ]; then
-        Prodver=$(hg log -r "branch(stable) and tag()" -T "{tags}\n" | tail -1)
-    fi
-elif [ -d "./.git" ]; then
-    xrev=$(git describe --always --dirty --long --abbrev=12) || exit 1
-    rev="git:$xrev"
-    if [ -z "$Prodver" ]; then
-        Prodver=$(git tag --list | tail -1)
-    fi
-else
-    rev="UNKNOWN-VER"
-    echo "$0: Can't find version info" 1>&2
-fi
-
 
 # Do Protobufs if needed
 if [ -n "$Protobufs" ]; then
-    slick=$Hostbindir/protoc-gen-gogoslick
-    slicksrc=github.com/gogo/protobuf/protoc-gen-gogoslick
-    pc=$(type -p protoc)
-
-    [ -z "$pc" ] && die "Need 'protoc' for building .."
-
-    slick=$(hosttool protoc-gen-gogoslick $Hostbindir $slicksrc) || exit 1
-    #if [ ! -f $slick ]; then
-    #   echo "Building $slick .."
-    #   $e go build -o $slick github.com/gogo/protobuf/protoc-gen-gogoslick || exit 1
-    #i
-
-    export PATH=$PATH:$Hostbindir
-
-    for f in $Protobufs; do
-        dn=$(dirname $f)
-        bn=$(basename $f .proto)
-        of=$dn/${bn}.pb.go
-        if [ $f -nt $of ]; then
-            echo "Running $pc .."
-            $e $pc --gogoslick_out=. $f || exit 1
-        fi
-    done
+    set +e
+    buildproto $Protobufs
+    set -e
 fi
 
-repover="main.RepoVersion=$rev"
+# Get git/hg version info for the build
+repover="main.RepoVersion=$Repover"
 prodver="main.ProductVersion=$Prodver"
 date="main.Buildtime=`date -u '+%Y-%m-%dT%H:%M.%SZ'`"
 ldflags="-ldflags \"-X $repover -X $prodver -X $date $ldflags\""
@@ -407,9 +424,9 @@ case $Tool in
             all="$@"
         fi
 
-        echo "Building $Prodver ($rev), $cross $msg .."
+        echo "Building $Prodver ($Repover), $cross $msg .."
 
-        for p in $all; do 
+        for p in $all; do
             if echo $p | grep -q ':' ; then
                 out=${p##*:}
                 dir=${p%%:*}
@@ -417,6 +434,13 @@ case $Tool in
                 out=$p
                 dir=$p
             fi
+
+            # Add .exe suffix to out if needed
+            if [ "$GOOS" = "windows" ]; then
+                base=${out%%.exe}
+                out="${base}.exe"
+            fi
+
             echo "   $dir: $out .. "
             $e eval $Go build $vflag -o $Bindir/$out $isuffix "$ldflags" ./$dir || exit 1
         done
