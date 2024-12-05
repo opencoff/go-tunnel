@@ -365,7 +365,7 @@ func TestClientTlsToQuic(t *testing.T) {
 	lc.clientCfg = &qtlsCfg
 	lc.Connect.Quic = true
 
-	cfg.Dump(log)
+	cfg.Dump(&logWriter{t})
 
 	// client TLS config; we need the proper root and client certs
 	ctlsCfg := *tlsCfg

@@ -95,7 +95,7 @@ func main() {
 
 	// We want microsecond timestamps and debug logs to have short
 	// filenames
-	const logflags int = L.Ldate | L.Ltime | L.Lshortfile | L.Lmicroseconds
+	const logflags int = L.Ldate | L.Ltime | L.Lfileloc | L.Lmicroseconds
 	var logf string = cfg.Logging
 
 	if debug {
@@ -108,9 +108,10 @@ func main() {
 		die("Can't create logger: %s", err)
 	}
 
-	err = log.EnableRotation(00, 01, 00, 7)
-	if err != nil {
-		warn("Can't enable log rotation: %s", err)
+	if rlog, ok := log.(L.RotatableLogger); ok {
+		if err := rlog.EnableRotation(00, 01, 00, 7); err != nil {
+			warn("Can't enable log rotation: %s", err)
+		}
 	}
 
 	log.Info("gotun - %s [%s - built on %s] starting up (logging at %s)...",
@@ -165,7 +166,7 @@ func main() {
 }
 
 // Profiler
-func initProfilers(log *L.Logger, dbdir string) {
+func initProfilers(log L.Logger, dbdir string) {
 	cpuf := fmt.Sprintf("%s/cpu.cprof", dbdir)
 	memf := fmt.Sprintf("%s/mem.mprof", dbdir)
 

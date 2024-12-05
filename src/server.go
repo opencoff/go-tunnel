@@ -11,19 +11,19 @@ package main
 import (
 	"context"
 	"crypto/tls"
-	//"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/quic-go/quic-go"
 	L "github.com/opencoff/go-logger"
 	"github.com/opencoff/go-ratelimit"
+	"github.com/quic-go/quic-go"
 )
 
 // Common server state
@@ -55,7 +55,7 @@ type Server struct {
 
 	rl *ratelimit.Limiter
 
-	log *L.Logger
+	log L.Logger
 }
 
 // Encapsulates info needed to be a plain listener or a TLS listener.
@@ -96,7 +96,7 @@ type relay struct {
 
 // Make a new instance of a Server and return it
 // This function exits on any configuration parsing error.
-func NewServer(lc *ListenConf, c *Conf, log *L.Logger) Proxy {
+func NewServer(lc *ListenConf, c *Conf, log L.Logger) Proxy {
 	addr := lc.Addr
 
 	// create a sub-logger with the listener's prefix.
@@ -410,7 +410,7 @@ func (p *TCPServer) handleTCP(conn Conn, ctx context.Context) {
 
 // handle the relay from 'conn' to the peer and back.
 // this sets up the peer connection before the relay
-func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
+func (p *Server) handleConn(conn Conn, ctx context.Context, log L.Logger) {
 	defer func() {
 		p.wg.Done()
 		conn.Close()
@@ -511,7 +511,7 @@ func (p *Server) handleConn(conn Conn, ctx context.Context, log *L.Logger) {
 }
 
 // Negotiate socksv5 with peer 'fd' and return endpoints to dial
-func (p *Server) socks(fd Conn, buf []byte, log *L.Logger) (network, addr string, nr int, err error) {
+func (p *Server) socks(fd Conn, buf []byte, log L.Logger) (network, addr string, nr int, err error) {
 
 	done := p.ctx.Done()
 	// Socksv5 state machine:
@@ -674,7 +674,17 @@ func (p *Server) putBuf(b []byte) {
 	p.pool.Put(b)
 }
 
-func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log *L.Logger) (x, y int) {
+// return true if err matches any of the target errors
+func errAny(err error, target ...error) bool {
+	for _, x := range target {
+		if errors.Is(err, x) {
+			return true
+		}
+	}
+	return false
+}
+
+func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log L.Logger) (x, y int) {
 	rto := time.Duration(p.Timeout.Read) * time.Second
 	wto := time.Duration(p.Timeout.Write) * time.Second
 	done := ctx.Done()
@@ -688,7 +698,7 @@ func (p *Server) cancellableCopy(d, s Conn, buf []byte, ctx context.Context, log
 		}
 
 		if err != nil {
-			if err != io.EOF && err != context.Canceled && !isReset(err) {
+			if !errAny(err, io.EOF, context.Canceled, os.ErrDeadlineExceeded) && !isReset(err) {
 				log.Debug("%s: nr %d, read err %s", s.LocalAddr().String(), nr, err)
 				return
 			}
@@ -775,7 +785,7 @@ func (p *TCPServer) Accept() (net.Conn, error) {
 	}
 }
 
-func (s *Server) getSNIHandler(dir string, log *L.Logger) func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
+func (s *Server) getSNIHandler(dir string, log L.Logger) func(h *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	conf := s.conf
 	dir = conf.Path(dir)
 	if !isdir(dir) {

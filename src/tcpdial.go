@@ -19,11 +19,11 @@ import (
 
 type tcpDialer struct {
 	r    *Server
-	log  *L.Logger
+	log  L.Logger
 	dial *net.Dialer
 }
 
-func newTCPDialer(r *Server, log *L.Logger) (Dialer, error) {
+func newTCPDialer(r *Server, log L.Logger) (Dialer, error) {
 	return &tcpDialer{
 		r:   r,
 		log: log,

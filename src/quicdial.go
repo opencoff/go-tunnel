@@ -11,8 +11,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/quic-go/quic-go"
 	L "github.com/opencoff/go-logger"
+	"github.com/quic-go/quic-go"
 	"net"
 	"sync"
 	"time"
@@ -23,7 +23,7 @@ type quicDialer struct {
 
 	r *Server
 
-	log *L.Logger
+	log L.Logger
 
 	// map of destinations to qSession
 	dest map[string]quic.Connection
@@ -36,10 +36,10 @@ type qConn struct {
 	// Link back to quic session for this stream
 	s quic.Connection
 
-	log *L.Logger
+	log L.Logger
 }
 
-func newQuicDialer(r *Server, log *L.Logger) (Dialer, error) {
+func newQuicDialer(r *Server, log L.Logger) (Dialer, error) {
 	var nextproto = "relay"
 	r.clientTls.NextProtos = []string{nextproto}
 

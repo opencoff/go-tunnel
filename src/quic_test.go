@@ -314,7 +314,7 @@ func TestTcpToQuicAuth(t *testing.T) {
 	// we want outgoing connect to be quic
 	lc.Connect.Quic = true
 
-	cfg.Dump(log)
+	cfg.Dump(&logWriter{t})
 
 	cert, err := pki.ServerCert("server.name", lc.Addr)
 	assert(err == nil, "can't create server cert: %s", err)

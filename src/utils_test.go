@@ -53,7 +53,7 @@ func (a *logWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func newLogger(t *testing.T) *L.Logger {
+func newLogger(t *testing.T) L.Logger {
 	assert := newAsserter(t)
 	a := &logWriter{T: t}
 	log, err := L.New(a, L.LOG_DEBUG, "gotun-test", 0)

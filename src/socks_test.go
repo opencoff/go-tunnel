@@ -18,7 +18,7 @@ func TestSocksToTcpIP4(t *testing.T) {
 	lca := cfga.Listen[0]
 	lca.Connect.Addr = "SOCKS"
 
-	cfga.Dump(log)
+	cfga.Dump(&logWriter{t})
 
 	// start simple server on the other end of socks
 	s := newTcpServer("tcp4", "127.0.0.1:9010", nil, t)
@@ -56,7 +56,7 @@ func TestSocksToTcpHost(t *testing.T) {
 	lca := cfga.Listen[0]
 	lca.Connect.Addr = "SOCKS"
 
-	cfga.Dump(log)
+	cfga.Dump(&logWriter{t})
 
 	// start simple server on the other end of socks
 	s := newTcpServer("tcp4", "localhost:9010", nil, t)
@@ -115,8 +115,8 @@ func TestSocksToQuicIP4(t *testing.T) {
 	lcb := cfgb.Listen[0]
 	lcb.Connect.Addr = "SOCKS"
 
-	cfga.Dump(log)
-	cfgb.Dump(log)
+	cfga.Dump(&logWriter{t})
+	cfgb.Dump(&logWriter{t})
 
 	cert, err := pki.ServerCert("server.name", lcb.Addr)
 	assert(err == nil, "can't create server cert: %s", err)
