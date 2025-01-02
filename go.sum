@@ -23,8 +23,8 @@ github.com/opencoff/go-logger v0.7.3 h1:UQMhKfeICaBsuWzyV/S+PBTssX0XFB9cVuknksxy
 github.com/opencoff/go-logger v0.7.3/go.mod h1:dhRnw/605cByI6vleNQFb81ADuw3DH390BtkHoGY/uo=
 github.com/opencoff/go-ratelimit v0.9.0 h1:njeetVxXXz8PEhwIk4oeNpj+1kDrUbxta7y9VSMQMeE=
 github.com/opencoff/go-ratelimit v0.9.0/go.mod h1:CZOjkRlhRo07XJt81kMF0NfOP7cYTfhZG1zPU5AAK78=
-github.com/opencoff/go-utils v1.0.1 h1:3Ibx2DQP+nQiany99sDVSgVvtyYaErpBrUjCRhZFnIs=
-github.com/opencoff/go-utils v1.0.1/go.mod h1:kh14Pqqe/QYGRph7ue4GWzLrlTOW8O/728qsuDFygeI=
+github.com/opencoff/go-utils v1.0.2 h1:BANRL8ZxgHpuo8gQBAzT3M9Im3aNFhaWW28jhc86LNs=
+github.com/opencoff/go-utils v1.0.2/go.mod h1:eZkEVQVzNfuE8uGepyhscMsqcXq7liGbBHYYwgYaoy8=
 github.com/opencoff/golang-lru v0.6.0 h1:e5jyAHA4AJbohh8mmPB6JpTvZMVrnh3z5GFAqTADVm8=
 github.com/opencoff/golang-lru v0.6.0/go.mod h1:Ll98eBFICVmenoj+uJfH+ReFgDMD+nuK9VshgMwDs80=
 github.com/opencoff/pflag v1.0.6-sh1 h1:6RO8GgnpH928yu6earGDD01FnFT//bDJ1hCovcVVqY4=
@@ -45,8 +45,8 @@ golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 h1:vr/HnozRka3pE4EsMEg1lgkXJ
 golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842/go.mod h1:XtvwrStGgqGPLc4cjQfWqZHG1YFdYs6swckp8vpsjnc=
 golang.org/x/mod v0.17.0 h1:zY54UmvipHiNd+pm+m0x9KhZ9hl1/7QNMyxXbc6ICqA=
 golang.org/x/mod v0.17.0/go.mod h1:hTbmBsO62+eylJbnUtE2MGJUyE7QWk4xUqPFrRgJ+7c=
-golang.org/x/net v0.28.0 h1:a9JDOJc5GMUJ0+UDqmLT86WiEy7iWyIhz8gz8E4e5hE=
-golang.org/x/net v0.28.0/go.mod h1:yqtgsTWOOnlGLG9GFRrK3++bGOUEkNBoHZc8MEDWPNg=
+golang.org/x/net v0.33.0 h1:74SYHlV8BIgHIFC/LrYkOGIwL19eTYXQ5wc6TBuO36I=
+golang.org/x/net v0.33.0/go.mod h1:HXLR5J+9DxmrqMwG9qjGCxZ+zKXxBru04zlTvWlWuN4=
 golang.org/x/sync v0.8.0 h1:3NFvSEYkUoMifnESzZl15y791HH1qU2xm6eCJU5ZPXQ=
 golang.org/x/sync v0.8.0/go.mod h1:Czt+wKu1gCyEFDUtn0jG5QVvpJ6rzVqr5aXyt9drQfk=
 golang.org/x/sys v0.0.0-20191204072324-ce4227a45e2e/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
