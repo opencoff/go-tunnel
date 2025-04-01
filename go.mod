@@ -3,7 +3,7 @@ module github.com/opencoff/go-tunnel
 go 1.24.0
 
 require (
-	github.com/opencoff/go-logger v0.7.3
+	github.com/opencoff/go-logger v0.7.4
 	github.com/opencoff/go-ratelimit v0.9.0
 	github.com/opencoff/go-utils v1.0.2
 	github.com/opencoff/pflag v1.0.7
@@ -20,7 +20,7 @@ require (
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240506185415-9bf2ced13842 // indirect
 	golang.org/x/mod v0.18.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/net v0.37.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
