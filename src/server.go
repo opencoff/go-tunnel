@@ -345,7 +345,7 @@ func (p *QuicServer) serveQuic() {
 	}
 }
 
-func (p *QuicServer) serviceSession(sess quic.Connection) {
+func (p *QuicServer) serviceSession(sess *quic.Conn) {
 	defer p.wg.Done()
 	done := p.ctx.Done()
 

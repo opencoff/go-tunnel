@@ -26,15 +26,15 @@ type quicDialer struct {
 	log L.Logger
 
 	// map of destinations to qSession
-	dest map[string]quic.Connection
+	dest map[string]*quic.Conn
 }
 
 // Wraps a quic Stream as a Conn
 type qConn struct {
-	quic.Stream
+	*quic.Stream
 
 	// Link back to quic session for this stream
-	s quic.Connection
+	s *quic.Conn
 
 	log L.Logger
 }
@@ -46,7 +46,7 @@ func newQuicDialer(r *Server, log L.Logger) (Dialer, error) {
 	q := &quicDialer{
 		r:    r,
 		log:  log,
-		dest: make(map[string]quic.Connection),
+		dest: make(map[string]*quic.Conn),
 	}
 
 	return q, nil
@@ -107,7 +107,7 @@ func (q *quicDialer) Dial(network, addr string, _ Conn, ctx context.Context) (Co
 	return nil, fmt.Errorf("quic: %s: can't connect after 3 tries", addr)
 }
 
-func (q *quicDialer) dialNew(ctx context.Context, addr string) (quic.Connection, error) {
+func (q *quicDialer) dialNew(ctx context.Context, addr string) (*quic.Conn, error) {
 	qcfg := &quic.Config{
 		KeepAlivePeriod: time.Duration(30 * time.Second),
 	}
