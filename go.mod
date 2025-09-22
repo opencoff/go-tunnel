@@ -1,13 +1,13 @@
 module github.com/opencoff/go-tunnel
 
-go 1.24.3
+go 1.25.1
 
 require (
 	github.com/opencoff/go-logger v0.7.4
 	github.com/opencoff/go-ratelimit v0.9.1
-	github.com/opencoff/go-utils v1.0.4
-	github.com/opencoff/pflag v1.0.7-0.sh.1
-	github.com/quic-go/quic-go v0.53.0
+	github.com/opencoff/go-utils v1.0.6
+	github.com/opencoff/pflag v1.0.7
+	github.com/quic-go/quic-go v0.54.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 
